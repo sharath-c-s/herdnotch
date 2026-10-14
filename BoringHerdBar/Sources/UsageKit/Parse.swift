@@ -54,13 +54,13 @@ enum UsageParse {
         return try? Date(text.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression), strategy: plainISO)
     }
 
-    /// `Retry-After` as delta-seconds or an HTTP-date.
+    /// `Retry-After` as delta-seconds (`0` stays 0) or an HTTP-date rounded up to whole seconds.
     static func retryAfter(_ response: HTTPResponse, now: Date) -> TimeInterval? {
         guard let raw = response.header("retry-after")?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty
         else { return nil }
         if let seconds = Int(raw), seconds >= 0 { return TimeInterval(seconds) }
-        return httpDate(raw).map { max(0, $0.timeIntervalSince(now)) }
+        return httpDate(raw).map { max(0, $0.timeIntervalSince(now).rounded(.up)) }
     }
 
     static func httpDate(_ value: String) -> Date? {
@@ -140,6 +140,7 @@ struct UsageContext: Sendable {
     var environment: [String: String]
     var home: URL
     var keychainDenials = KeychainDenials()
+    var keychainReads = KeychainReads()
 
     func env(_ name: String) -> String? {
         environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty

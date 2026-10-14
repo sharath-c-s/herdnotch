@@ -5,7 +5,7 @@ import UsageKit
 /// Polls plan usage for the enabled providers every 5 minutes, off the main thread, and publishes the latest snapshots.
 ///
 /// No timer exists while every provider is disabled. ``refreshIfStale(maxAge:)`` lets the System page pull a
-/// fresh reading when it opens.
+/// reading when it opens, but the fetcher reuses an answer under 5 minutes old, so only the timer hits the network.
 @MainActor
 final class UsageService: ObservableObject {
     static let pollInterval: TimeInterval = 5 * 60
@@ -50,22 +50,29 @@ final class UsageService: ObservableObject {
     func refreshIfStale(maxAge: TimeInterval = 60) {
         guard !enabled.isEmpty else { return }
         if let lastRefresh, Date().timeIntervalSince(lastRefresh) < maxAge { return }
-        refresh()
+        refresh(force: false)
     }
 
     /// Fetches every enabled provider in its own task, so one provider's slow Keychain prompt never holds
     /// back the others' results; a provider still in flight is skipped.
-    func refresh() {
+    func refresh(force: Bool = true) {
         guard !enabled.isEmpty else { return }
         lastRefresh = Date()
         let fetcher = fetcher
         for provider in enabled where !inFlight.contains(provider) {
             inFlight.insert(provider)
             Task { [weak self] in
-                let snapshot = await fetcher.fetch(provider)
+                if let saved = await fetcher.persistedSnapshots()[provider] { self?.paintSaved(saved) }
+                let snapshot = await fetcher.fetch(provider, force: force)
                 self?.apply(snapshot)
             }
         }
+    }
+
+    /// Shows the previous run's reading until the first fetch lands; no alerts, never over a live snapshot.
+    private func paintSaved(_ snapshot: UsageSnapshot) {
+        guard enabled.contains(snapshot.provider), snapshots[snapshot.provider] == nil else { return }
+        snapshots[snapshot.provider] = snapshot
     }
 
     private func apply(_ snapshot: UsageSnapshot) {

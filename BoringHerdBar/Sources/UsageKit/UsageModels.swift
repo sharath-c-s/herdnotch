@@ -1,12 +1,12 @@
 import Foundation
 
-public enum UsageProvider: String, CaseIterable, Sendable {
+public enum UsageProvider: String, CaseIterable, Codable, Sendable {
     case claude, codex, openCode, antigravity
 }
 
 /// One rate-limit window. `usedPercent` is 0...100; `resetsAt` is nil when the window has not started
 /// or the provider did not report a reset.
-public struct UsageWindow: Equatable, Sendable {
+public struct UsageWindow: Equatable, Codable, Sendable {
     public var label: String
     public var usedPercent: Double
     public var resetsAt: Date?
@@ -20,14 +20,14 @@ public struct UsageWindow: Equatable, Sendable {
     }
 }
 
-public enum UsageExtra: Equatable, Sendable {
+public enum UsageExtra: Equatable, Codable, Sendable {
     /// Claude extra usage in dollars; `limitUSD` is nil when no monthly cap is set.
     case claudeExtraUsage(usedUSD: Double, limitUSD: Double?)
     /// Codex flex credits: the floored credit count and its dollar value.
     case codexCredits(credits: Int, usd: Double)
 }
 
-public enum UsageState: Equatable, Sendable {
+public enum UsageState: Equatable, Codable, Sendable {
     case ok
     /// Windows are last-good values from `since`; the live fetch is not possible (for example an expired token).
     case stale(since: Date, reason: String)
@@ -38,7 +38,7 @@ public enum UsageState: Equatable, Sendable {
     case error(String)
 }
 
-public struct UsageSnapshot: Equatable, Sendable {
+public struct UsageSnapshot: Equatable, Codable, Sendable {
     public var provider: UsageProvider
     public var windows: [UsageWindow]
     public var plan: String?

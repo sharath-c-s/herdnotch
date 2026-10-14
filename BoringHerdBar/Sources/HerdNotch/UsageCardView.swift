@@ -85,27 +85,13 @@ struct UsageCardView: View {
                 Text(plan).font(.system(size: 11)).foregroundStyle(palette.textTertiary)
             }
             Spacer(minLength: 4)
-            if let note = statusNote {
+            if let note = UsageStatus.note(for: snapshot, now: now) {
                 Text(note).font(.system(size: 12)).foregroundStyle(palette.textSecondary).lineLimit(1)
             }
         }
     }
 
-    private var statusNote: String? {
-        guard let snapshot else { return "loading" }
-        switch snapshot.state {
-        case .ok: return nil
-        case .notSetUp: return "not set up"
-        case .stale(let since, _): return "updated \(UsageFormat.duration(max(now.timeIntervalSince(since), 60))) ago"
-        case .rateLimited(let until): return "rate limited, retry \(UsageFormat.duration(until.timeIntervalSince(now)))"
-        case .error(let message): return String(message.prefix(40))
-        }
-    }
-
-    private var dimmed: Bool {
-        if case .stale = snapshot?.state { return true }
-        return false
-    }
+    private var dimmed: Bool { UsageStatus.isDimmed(snapshot, now: now) }
 
     private func windows(_ snapshot: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 7) {

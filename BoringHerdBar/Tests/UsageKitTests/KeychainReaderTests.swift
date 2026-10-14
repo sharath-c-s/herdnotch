@@ -42,4 +42,17 @@ import Testing
         #expect(await reader.read(service: "denied") == nil)
         #expect(await reader.read(service: "ok") == "secret")
     }
+
+    @Test func aSecondReadWaitsForTheOutstandingOneInsteadOfSpawningAnother() async throws {
+        let runner = GatedRunner()
+        let reader = KeychainReader(runner: runner, promptThreshold: 60)
+        async let first = reader.read(service: "svc")
+        while runner.calls.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        async let second = reader.read(service: "svc")
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(runner.calls.count == 1)
+        runner.release()
+        _ = await (first, second)
+        #expect(runner.calls.count == 1)
+    }
 }

@@ -146,7 +146,7 @@ actor ClaudeUsageSource: UsageSource {
     }
 
     private func credentialCandidates() async -> [ClaudeOAuth] {
-        let keychain = KeychainReader(runner: context.runner, denials: context.keychainDenials)
+        let keychain = KeychainReader(runner: context.runner, denials: context.keychainDenials, reads: context.keychainReads)
         let configDir = context.env("CLAUDE_CONFIG_DIR")
         var found: [ClaudeOAuth] = []
         for service in ClaudeCredentials.keychainServices(configDir: configDir) {

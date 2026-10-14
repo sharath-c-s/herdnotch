@@ -264,7 +264,7 @@ struct AntigravityUsageSource: UsageSource {
     }
 
     private func probeCloudCode(now: Date) async throws -> UsageReading {
-        let raw = await KeychainReader(runner: context.runner, denials: context.keychainDenials).read(
+        let raw = await KeychainReader(runner: context.runner, denials: context.keychainDenials, reads: context.keychainReads).read(
             service: AntigravityAuth.keychainService, account: AntigravityAuth.keychainAccount
         )
         guard let raw, let keychain = AntigravityAuth.extractToken(raw), let token = keychain.accessToken else {
