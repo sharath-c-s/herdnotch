@@ -1,0 +1,68 @@
+{
+  "id": "fix",
+  "result": {
+    "type": "agent_list",
+    "agents": [
+      {
+        "terminal_id": "term_656f9d8b035783",
+        "agent": "codex",
+        "agent_status": "idle",
+        "workspace_id": "w1",
+        "tab_id": "w1:tC",
+        "pane_id": "w1:pD",
+        "focused": false,
+        "cwd": "/Users/dev/playground/side_project",
+        "foreground_cwd": "/Users/dev/playground/side_project",
+        "revision": 0
+      },
+      {
+        "terminal_id": "term_656f9d8b03cc44",
+        "agent": "claude",
+        "agent_status": "idle",
+        "workspace_id": "w1",
+        "tab_id": "w1:tC",
+        "pane_id": "w1:pF",
+        "focused": false,
+        "cwd": "/Users/dev/playground/side_project",
+        "foreground_cwd": "/Users/dev/playground/side_project",
+        "revision": 0
+      },
+      {
+        "terminal_id": "term_6576f54bc66939",
+        "agent": "claude",
+        "agent_status": "idle",
+        "workspace_id": "w1",
+        "tab_id": "w1:tJ",
+        "pane_id": "w1:pN",
+        "focused": false,
+        "cwd": "/Users/dev/playground/fun_stuff/forget_me_not",
+        "foreground_cwd": "/Users/dev/playground/fun_stuff/forget_me_not",
+        "revision": 0
+      },
+      {
+        "terminal_id": "term_657ab948371e0a",
+        "agent": "codex",
+        "agent_status": "idle",
+        "workspace_id": "w2",
+        "tab_id": "w2:t1",
+        "pane_id": "w2:p1",
+        "focused": false,
+        "cwd": "/Users/dev/playground",
+        "foreground_cwd": "/Users/dev/playground",
+        "revision": 0
+      },
+      {
+        "terminal_id": "term_657d201a058c8b",
+        "agent": "claude",
+        "agent_status": "working",
+        "workspace_id": "w2",
+        "tab_id": "w2:t2",
+        "pane_id": "w2:p2",
+        "focused": true,
+        "cwd": "/Users/dev/playground/boring-herd",
+        "foreground_cwd": "/Users/dev/.claude/plugins/marketplaces/thedotmack",
+        "revision": 0
+      }
+    ]
+  }
+}

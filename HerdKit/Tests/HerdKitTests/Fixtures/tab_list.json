@@ -1,0 +1,44 @@
+{
+  "id": "fix",
+  "result": {
+    "type": "tab_list",
+    "tabs": [
+      {
+        "tab_id": "w1:tC",
+        "workspace_id": "w1",
+        "number": 12,
+        "label": "saas_me",
+        "focused": false,
+        "pane_count": 2,
+        "agent_status": "idle"
+      },
+      {
+        "tab_id": "w1:tJ",
+        "workspace_id": "w1",
+        "number": 18,
+        "label": "forget_me_not",
+        "focused": false,
+        "pane_count": 1,
+        "agent_status": "idle"
+      },
+      {
+        "tab_id": "w2:t1",
+        "workspace_id": "w2",
+        "number": 1,
+        "label": "1",
+        "focused": false,
+        "pane_count": 1,
+        "agent_status": "idle"
+      },
+      {
+        "tab_id": "w2:t2",
+        "workspace_id": "w2",
+        "number": 2,
+        "label": "boring_notch_herdr",
+        "focused": true,
+        "pane_count": 1,
+        "agent_status": "working"
+      }
+    ]
+  }
+}

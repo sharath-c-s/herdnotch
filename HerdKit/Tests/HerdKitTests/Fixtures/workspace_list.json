@@ -1,0 +1,28 @@
+{
+  "id": "fix",
+  "result": {
+    "type": "workspace_list",
+    "workspaces": [
+      {
+        "workspace_id": "w1",
+        "number": 1,
+        "label": "shara_misc",
+        "focused": false,
+        "pane_count": 4,
+        "tab_count": 3,
+        "active_tab_id": "w1:t7",
+        "agent_status": "idle"
+      },
+      {
+        "workspace_id": "w2",
+        "number": 2,
+        "label": "shara",
+        "focused": true,
+        "pane_count": 2,
+        "tab_count": 2,
+        "active_tab_id": "w2:t2",
+        "agent_status": "working"
+      }
+    ]
+  }
+}
