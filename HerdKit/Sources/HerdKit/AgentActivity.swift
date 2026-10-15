@@ -122,8 +122,8 @@ enum ToolSummarizer {
 public final class TranscriptReader {
     static let initialWindow: UInt64 = 2 * 1024 * 1024
     static let maxPending = 64
-    // ponytail: no transcript field exposes the window size; 1M if a [1m] model or any turn exceeded 200k.
-    // Upgrade when the transcript or herdr reports the real window.
+    // ponytail: no transcript field states the window size; 1M if the row's `requestedModel` (or model) has the
+    // `[1m]` tag, or any turn exceeded 200k. Upgrade when the transcript or herdr reports the real window.
     static let smallWindow = 200_000
     static let largeWindow = 1_000_000
 
@@ -199,7 +199,8 @@ public final class TranscriptReader {
             func n(_ k: String) -> Int { (usage?[k] as? NSNumber)?.intValue ?? 0 }
             let total = n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens")
             if rowModel != "<synthetic>" && !(usage != nil && total == 0) {
-                if let rowModel { model = rowModel }
+                // `message.model` drops the `[1m]` tag; the row-level `requestedModel` keeps it.
+                if let tagged = (obj["requestedModel"] as? String) ?? rowModel { model = tagged }
                 if usage != nil {
                     contextTokens = total
                     maxContext = max(maxContext, total)

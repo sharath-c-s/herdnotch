@@ -155,6 +155,21 @@ struct AgentActivityTests {
         #expect(tagged.contextLimit == 1_000_000)
     }
 
+    /// Real Claude Code rows: `message.model` is plain, the `[1m]` tag lives on the row's `requestedModel`.
+    @Test func requestedModelTagSelectsTheMillionWindowUnder200k() throws {
+        let row = json([
+            "type": "assistant", "requestedModel": "claude-opus-5-5[1m]",
+            "message": [
+                "model": "claude-opus-5-5", "stop_reason": "end_turn",
+                "usage": ["input_tokens": 2, "cache_read_input_tokens": 185_668, "cache_creation_input_tokens": 1_576],
+                "content": [["type": "text", "text": "hi"]],
+            ],
+        ])
+        let a = try activity([row])
+        #expect(a.contextLimit == 1_000_000)
+        #expect(a.contextTokens == 187_246)
+    }
+
     // MARK: - Incremental reading
 
     @Test func incrementalReadAcrossAppendsWithSplitLine() throws {
