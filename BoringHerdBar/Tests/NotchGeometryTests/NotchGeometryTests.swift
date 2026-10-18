@@ -162,4 +162,38 @@ import Testing
         #expect(layout.collapsedFrame.width == 0)
         #expect(layout.collapsedFrame.width >= 0)
     }
+
+    // MARK: - Wings
+
+    @Test func wingsFrameIsSymmetricAndLiftsTopByRadius() {
+        let metrics = notchedBuiltInDisplay()
+        let cutout = NotchGeometry.layout(for: metrics, expandedSize: CGSize(width: 400, height: 500)).collapsedFrame
+
+        let wings = NotchGeometry.wingsFrame(cutout: cutout, wingWidth: 30, screen: metrics.frame, radius: 8)
+
+        #expect(wings.midX == cutout.midX)
+        #expect(wings.width == cutout.width + 60)
+        #expect(wings.minY == cutout.minY)
+        #expect(wings.maxY == cutout.maxY + 8)
+    }
+
+    @Test func zeroWingIsCutoutPlusLift() {
+        let metrics = notchedBuiltInDisplay()
+        let cutout = CGRect(x: 660, y: 945, width: 192, height: 37)
+
+        let wings = NotchGeometry.wingsFrame(cutout: cutout, wingWidth: 0, screen: metrics.frame, radius: 8)
+
+        #expect(wings == CGRect(x: 660, y: 945, width: 192, height: 45))
+    }
+
+    @Test func wingsAreClampedToScreenSymmetrically() {
+        let screen = CGRect(x: 0, y: 0, width: 400, height: 300)
+        let cutout = CGRect(x: 100, y: 263, width: 192, height: 37)
+
+        let wings = NotchGeometry.wingsFrame(cutout: cutout, wingWidth: 150, screen: screen, radius: 8)
+
+        #expect(wings.minX == 0)
+        #expect(wings.midX == cutout.midX)
+        #expect(wings.width == 392)
+    }
 }

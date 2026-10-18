@@ -31,6 +31,8 @@ final class NotchPreferences: ObservableObject {
 
     /// The `UserDefaults` key backing ``showCollapsedPill``.
     private static let showCollapsedPillKey = "herdNotchShowCollapsedPill"
+    /// The `UserDefaults` key backing ``showLiveActivity``.
+    private static let showLiveActivityKey = "herdNotchShowLiveActivity"
     /// The `UserDefaults` key backing ``hoverInDelayMs``.
     private static let hoverInDelayMsKey = "herdNotchHoverInDelayMs"
     /// The `UserDefaults` key backing ``pageHoverDwellMs``.
@@ -150,6 +152,14 @@ final class NotchPreferences: ObservableObject {
         didSet {
             guard showCollapsedPill != oldValue else { return }
             UserDefaults.standard.set(showCollapsedPill, forKey: Self.showCollapsedPillKey)
+        }
+    }
+
+    /// Whether the collapsed notch grows wings showing blocked agents, now playing, active agents or battery.
+    @Published var showLiveActivity: Bool {
+        didSet {
+            guard showLiveActivity != oldValue else { return }
+            UserDefaults.standard.set(showLiveActivity, forKey: Self.showLiveActivityKey)
         }
     }
 
@@ -504,6 +514,7 @@ final class NotchPreferences: ObservableObject {
     private init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
+            Self.showLiveActivityKey: true,
             Self.hoverInDelayMsKey: Self.hoverInDelayMsDefault,
             Self.pageHoverDwellMsKey: Self.pageHoverDwellMsDefault,
             Self.exitGraceMsKey: Self.exitGraceMsDefault,
@@ -528,6 +539,7 @@ final class NotchPreferences: ObservableObject {
             Self.systemAlertCpuEnabledKey: true
         ])
         showCollapsedPill = defaults.bool(forKey: Self.showCollapsedPillKey)
+        showLiveActivity = defaults.bool(forKey: Self.showLiveActivityKey)
         hoverInDelayMs = Self.clamped(
             defaults.integer(forKey: Self.hoverInDelayMsKey), to: Self.hoverInDelayMsRange
         )

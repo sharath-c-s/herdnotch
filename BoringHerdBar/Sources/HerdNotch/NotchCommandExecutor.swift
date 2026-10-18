@@ -147,6 +147,12 @@ final class NotchCommandExecutor {
         }
     }
 
+    /// Retargets `display`'s resting collapsed shape (the notch's wings) without involving the reducer.
+    /// See ``NotchAnimator/retargetCollapsed(frame:cornerRadius:)`` for what each phase does with it.
+    func setCollapsedWings(_ display: NotchDisplayID, frame: CGRect, cornerRadius: CGFloat) {
+        displays[display]?.animator.retargetCollapsed(frame: frame, cornerRadius: cornerRadius)
+    }
+
     /// Tears down every timer and monitor this type owns for `display` and forgets it, because
     /// `NotchWindowController` determined the underlying screen has vanished.
     ///

@@ -137,6 +137,14 @@ struct NotchSettingsView: View {
                 "Draws the collapsed notch shape. On a Mac with a physical notch the cutout itself cannot be hidden; "
                     + "off, a notchless display shows nothing until hovered."
             )
+            Toggle(
+                "Show live activity beside the notch",
+                isOn: Binding(
+                    get: { notchPreferences.showLiveActivity },
+                    set: { notchPreferences.showLiveActivity = $0 }
+                )
+            )
+            .help("Wings beside a collapsed notch show blocked agents, now playing, active agents or battery.")
         }
     }
 

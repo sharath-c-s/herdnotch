@@ -91,6 +91,22 @@ public enum NotchGeometry {
         )
     }
 
+    /// The collapsed shape widened by `wingWidth` on each side of a notched display's `cutout`.
+    ///
+    /// Grows symmetrically about the cutout's midX, clamped so neither side leaves `screen`. The bottom
+    /// edge stays on the cutout's, and the top is lifted `radius` above it: the window top is pinned to the
+    /// cutout top, so a mask whose corners are all rounded by `radius` shows only its bottom corners rounded.
+    public static func wingsFrame(cutout: CGRect, wingWidth: CGFloat, screen: CGRect, radius: CGFloat) -> CGRect {
+        let room = min(cutout.minX - screen.minX, screen.maxX - cutout.maxX)
+        let wing = max(0, min(wingWidth, room))
+        return CGRect(
+            x: cutout.minX - wing,
+            y: cutout.minY,
+            width: cutout.width + 2 * wing,
+            height: cutout.height + radius
+        )
+    }
+
     /// Applies the classification rule documented on ``layout(for:expandedSize:)``.
     private static func classify(_ metrics: ScreenMetrics) -> NotchKind {
         guard

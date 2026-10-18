@@ -237,6 +237,14 @@ final class NotchWindowController: NSObject {
     /// "one machine-wide fact" reason as the other services; event-driven, so it costs nothing while idle.
     let batteryService = BatteryService()
 
+    /// What the collapsed notch's wings show, shared by every display like the services it folds together.
+    private(set) lazy var liveActivity = LiveActivityModel(
+        herdModel: herdModel,
+        spotifyService: spotifyService,
+        systemNowPlayingService: systemNowPlayingService,
+        batteryService: batteryService
+    )
+
     /// Shared with the settings window (see ``LidSleepController/shared``).
     let lidSleepController = LidSleepController.shared
 
@@ -350,6 +358,24 @@ final class NotchWindowController: NSObject {
     /// ``updateGeometry(display:existing:layout:)``.
     private var collapsedScreenFrames: [NotchDisplayID: CGRect] = [:]
 
+    /// Each live display's full screen frame, the clamp for ``collapsedShape(display:layout:)``'s wings.
+    private var screenFrames: [NotchDisplayID: CGRect] = [:]
+
+    /// Each live display's latest layout, so a wings change can recompute frames without a reconcile pass.
+    private var layouts: [NotchDisplayID: NotchLayout] = [:]
+
+    /// Wing width per side while the wings just show their glyph and count.
+    private static let compactWingWidth: CGFloat = 30
+
+    /// Wing width per side while a track-change announce shows "Title · Artist".
+    private static let announceWingWidth: CGFloat = 150
+
+    /// Bottom-corner radius of the wings; the top corners are lifted out of the window (see
+    /// `NotchGeometry.wingsFrame`).
+    private static let wingsCornerRadius: CGFloat = 8
+
+    private var liveActivityCancellables: Set<AnyCancellable> = []
+
     /// Creates the controller and its poller.
     ///
     /// - Parameter preferences: Settings source shared with the app delegate, threaded down to
@@ -412,6 +438,13 @@ final class NotchWindowController: NSObject {
                 self?.handleBatteryChange(percent)
             }
         }
+        liveActivity.$activity.removeDuplicates().sink { [weak self] _ in
+            // Same main-actor hop as above; also lets `@Published` store the new value first.
+            Task { @MainActor in self?.refreshAllWings() }
+        }.store(in: &liveActivityCancellables)
+        NotchPreferences.shared.$showLiveActivity.removeDuplicates().dropFirst().sink { [weak self] _ in
+            Task { @MainActor in self?.refreshAllWings() }
+        }.store(in: &liveActivityCancellables)
         startSystemServices()
         NotificationCenter.default.addObserver(
             self, selector: #selector(screenParametersChanged),
@@ -544,6 +577,60 @@ final class NotchWindowController: NSObject {
             viewModel.pendingRoute = pendingRoute
         }
         updateContainerVisibility(display: display)
+        refreshWings(for: display)
+    }
+
+    /// The collapsed mask and hover frames for `display`, in window-local coordinates.
+    ///
+    /// Only a notched display, with the setting on and something to show, widens: the mask takes the
+    /// wings (compact, or announce width) and the hover view the compact wings, so a 3 s announce widening
+    /// under a resting pointer cannot open the panel. The mask keeps its wings while open so a close lands
+    /// on them directly (the animator only stores them then); the hover view widens only while
+    /// `.collapsed`, or it would sit over the open panel's band and eat its clicks. Suspended, and
+    /// `NotchLayout.collapsedFrame` itself, stay the true cutout.
+    private func collapsedShape(
+        display: NotchDisplayID, layout: NotchLayout
+    ) -> (mask: CGRect, radius: CGFloat, hover: CGRect) {
+        let cutout = localRect(layout.collapsedFrame, in: layout.expandedFrame)
+        let plain = (mask: cutout, radius: collapsedCornerRadius(for: layout), hover: cutout)
+        let presentation = reducer.panels[display]?.presentation ?? .collapsed
+        guard layout.kind == .notched,
+            NotchPreferences.shared.showLiveActivity,
+            presentation != .suspended,
+            let screen = screenFrames[display]
+        else { return plain }
+        let wingWidth: CGFloat
+        switch liveActivity.activity {
+        case .none: return plain
+        case .playing(_, let announce?) where !announce.isEmpty: wingWidth = Self.announceWingWidth
+        case .blocked, .playing, .agents, .battery: wingWidth = Self.compactWingWidth
+        }
+        let radius = Self.wingsCornerRadius
+        let mask = NotchGeometry.wingsFrame(
+            cutout: layout.collapsedFrame, wingWidth: wingWidth, screen: screen, radius: radius)
+        let hover = presentation == .collapsed
+            ? localRect(
+                NotchGeometry.wingsFrame(
+                    cutout: layout.collapsedFrame, wingWidth: Self.compactWingWidth, screen: screen, radius: 0),
+                in: layout.expandedFrame)
+            : cutout
+        return (localRect(mask, in: layout.expandedFrame), radius, hover)
+    }
+
+    /// Re-targets one display's resting collapsed shape and hover frame to the current activity.
+    private func refreshWings(for display: NotchDisplayID) {
+        guard let displayPanel = displayPanels[display], let layout = layouts[display] else { return }
+        let shape = collapsedShape(display: display, layout: layout)
+        if displayPanel.hoverView.frame != shape.hover {
+            displayPanel.hoverView.frame = shape.hover
+        }
+        executor.setCollapsedWings(display, frame: shape.mask, cornerRadius: shape.radius)
+    }
+
+    private func refreshAllWings() {
+        for display in displayPanels.keys {
+            refreshWings(for: display)
+        }
     }
 
     /// Hides ``NotchPanel/containerView``'s translucent material while a notchless (`.pill`) display is
@@ -613,6 +700,7 @@ final class NotchWindowController: NSObject {
             }
         }
         herdModel.setActive(anyExpanded)
+        liveActivity.isPanelOpen = anyExpanded
         if anyExpanded {
             spotifyService.startPositionTicking()
             systemNowPlayingService.startPositionTicking()
@@ -981,6 +1069,8 @@ final class NotchWindowController: NSObject {
             liveDisplays.insert(display)
             let metrics = NotchScreenAdapter.metrics(for: screen)
             let layout = NotchGeometry.layout(for: metrics, expandedSize: Self.expandedSize)
+            screenFrames[display] = metrics.frame
+            layouts[display] = layout
             if let existing = displayPanels[display] {
                 updateGeometry(display: display, existing: existing, layout: layout)
             } else {
@@ -1012,6 +1102,8 @@ final class NotchWindowController: NSObject {
             displayPanels[display]?.panel.orderOut(nil)
             displayPanels.removeValue(forKey: display)
             collapsedScreenFrames.removeValue(forKey: display)
+            screenFrames.removeValue(forKey: display)
+            layouts.removeValue(forKey: display)
         }
     }
 
@@ -1036,6 +1128,7 @@ final class NotchWindowController: NSObject {
                 spotifyService: spotifyService,
                 systemNowPlayingService: systemNowPlayingService,
                 batteryService: batteryService,
+                liveActivity: liveActivity,
                 shelfService: shelfService,
                 searchKeyNav: searchKeyNav,
                 onEscape: { [weak self] in self?.send(.escape(display)) },
@@ -1057,7 +1150,8 @@ final class NotchWindowController: NSObject {
             self?.send(.scrollMomentumEnded(display, pointerInside: panel.frame.contains(NSEvent.mouseLocation)))
         }
 
-        let hoverView = NotchHoverView(frame: localRect(layout.collapsedFrame, in: layout.expandedFrame))
+        let shape = collapsedShape(display: display, layout: layout)
+        let hoverView = NotchHoverView(frame: shape.hover)
         hoverView.onMouseEntered = { [weak self] in self?.send(.hoverIntent(display)) }
         hoverView.onClick = { [weak self] in self?.send(.click(display)) }
         hoverView.onFileDragEntered = { [weak self] in self?.send(.fileDragEntered(display)) }
@@ -1068,8 +1162,8 @@ final class NotchWindowController: NSObject {
         executor.configureDisplay(
             display,
             panel: panel,
-            collapsedFrame: localRect(layout.collapsedFrame, in: layout.expandedFrame),
-            collapsedCornerRadius: collapsedCornerRadius(for: layout),
+            collapsedFrame: shape.mask,
+            collapsedCornerRadius: shape.radius,
             expandedFrameScreen: layout.expandedFrame,
             expandedCornerRadius: layout.cornerRadius,
             presentation: reducer.panels[display]?.presentation ?? .collapsed
@@ -1092,12 +1186,13 @@ final class NotchWindowController: NSObject {
         existing.viewModel.notchRect = notchRect(for: layout)
         existing.viewModel.expandedSize = layout.expandedFrame.size
         collapsedScreenFrames[display] = layout.collapsedFrame
-        existing.hoverView.frame = localRect(layout.collapsedFrame, in: layout.expandedFrame)
+        let shape = collapsedShape(display: display, layout: layout)
+        existing.hoverView.frame = shape.hover
         executor.configureDisplay(
             display,
             panel: existing.panel,
-            collapsedFrame: localRect(layout.collapsedFrame, in: layout.expandedFrame),
-            collapsedCornerRadius: collapsedCornerRadius(for: layout),
+            collapsedFrame: shape.mask,
+            collapsedCornerRadius: shape.radius,
             expandedFrameScreen: layout.expandedFrame,
             expandedCornerRadius: layout.cornerRadius,
             presentation: reducer.panels[display]?.presentation ?? .collapsed

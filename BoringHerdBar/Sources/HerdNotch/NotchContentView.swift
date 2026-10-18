@@ -24,14 +24,14 @@ import UniformTypeIdentifiers
 /// step above the panel's own near-black ground, a single hairline, and a 1px top highlight — no shadow,
 /// no per-corner geometry.
 ///
-/// - It reads `viewModel.presentation` to choose between the collapsed peek and the expanded surface, never
+/// - It reads `viewModel.presentation` to choose between the collapsed wings and the expanded surface, never
 ///   an animation-in-flight flag of its own: while `NotchAnimator` is growing or shrinking the container's
 ///   mask, this view is already showing whichever body its target state calls for, so the mask's motion is
 ///   a pure reveal/conceal of already-correct content rather than something this view needs to coordinate
 ///   with. `.collapsing` renders the *expanded* body, not the collapsed one: the shrinking mask is what
 ///   conceals the surface, and swapping the content out a frame early (before the mask has actually covered
 ///   it) is exactly the pop-then-shrink glitch an earlier adversarial review found — only `.collapsed`
-///   itself, the animation's settled resting state, shows the peek.
+///   itself, the animation's settled resting state, shows the wings.
 /// - The whole expanded surface is a canvas of the user's chosen size (``NotchDisplayViewModel/expandedSize``),
 ///   and every card within it is placed at its ``BentoLayout`` frame regardless of its content: an
 ///   empty agents card, a not-running Spotify and a not-yet-authorized Reminders card all render into the
@@ -83,6 +83,9 @@ struct NotchContentView: View {
     /// same "one machine-wide fact" reason as the other services.
     @ObservedObject var batteryService: BatteryService
 
+    /// What the collapsed notch's wings show. Shared across displays; see `LiveActivityModel`.
+    @ObservedObject var liveActivity: LiveActivityModel
+
     /// The shared file shelf, feeding ``shelfCard``. One instance for every display, so all show the same
     /// files.
     @ObservedObject var shelfService: ShelfService
@@ -121,7 +124,7 @@ struct NotchContentView: View {
     /// so this view only ever has to report *which* agent was picked, never decide what "picking one" does.
     let onSelectAgent: (HerdSession, HerdAgent) -> Void
 
-    /// Whether the collapsed peek is forced visible on a notchless display. Observed here (rather than
+    /// Whether the collapsed pill is forced visible on a notchless display. Observed here (rather than
     /// read once) so the debug status-item menu's "Show Pill" toggle repaints every open panel live.
     @ObservedObject private var preferences = NotchPreferences.shared
 
@@ -133,7 +136,7 @@ struct NotchContentView: View {
     /// The one timer this file owns, ticking ``now`` once a second. Started in ``expandedBody``'s
     /// `.onAppear` and invalidated in its `.onDisappear`, so it exists for exactly as long as the expanded
     /// surface (`.expanding`/`.expanded`/`.collapsing`) is mounted and never while the panel is merely a
-    /// collapsed peek. A plain `Timer` on the main run loop's `.common` mode, not a `TimelineView` — the
+    /// collapsed pill or wings. A plain `Timer` on the main run loop's `.common` mode, not a `TimelineView` — the
     /// design spec explicitly forbids `TimelineView` here — and not a `DispatchSourceTimer` either, since
     /// that idiom is reserved elsewhere in this target for the Phase 1 glitch-avoidance machinery this view
     /// is not part of and must not entangle itself with.
@@ -227,31 +230,30 @@ struct NotchContentView: View {
         .onExitCommand(perform: onEscape)
     }
 
-    // MARK: - Collapsed peek
+    // MARK: - Collapsed wings
 
-    /// The collapsed pill's fill, plus a static peek of blocked-count and now-playing art in the pill's own
-    /// flanks. See ``NotchCollapsedPeek`` for the peek content itself.
+    /// The collapsed pill's fill plus the live activity wings.
     ///
-    /// On a real physical notch (``NotchKind/notched``) the base fill always draws: the pill is not an
-    /// affordance that can be hidden, it is a plain-coloured fill of the display's own cutout. On a
+    /// On a real physical notch (``NotchKind/notched``) the base fill always draws, in black to merge with
+    /// the display's own cutout, and the wings sit either side of it inside the widened mask. On a
     /// notchless display (``NotchKind/pill``) it draws nothing at all unless
-    /// ``NotchPreferences/showCollapsedPill`` is on. That is safe to do because the hover target that
-    /// expands the panel is `NotchHoverView`, a separate `NSView` sized straight from
-    /// `NotchLayout.collapsedFrame` and layered on top of this content by
-    /// `NotchWindowController.makePanel(for:layout:)` — it has no dependency on what (if anything) this view
-    /// draws, so hiding the fill here costs the hover zone nothing.
+    /// ``NotchPreferences/showCollapsedPill`` is on, and then the same content sits inside the pill
+    /// without widening it. Hover and click are `NotchHoverView`'s job, independent of what draws here.
     private var collapsedBody: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             if viewModel.layoutKind == .pill, !preferences.showCollapsedPill {
                 Color.clear
             } else {
-                Rectangle().fill(palette.surface)
-                NotchCollapsedPeek(
-                    blockedCount: herdModel.counts.blocked,
-                    peekArtwork: activeNowPlaying?.artwork,
-                    peekIsPlaying: activeNowPlaying?.isPlaying ?? false,
-                    palette: palette
-                )
+                Rectangle().fill(viewModel.layoutKind == .notched ? Color.black : palette.surface)
+                if preferences.showLiveActivity, viewModel.presentation == .collapsed {
+                    CollapsedWingsView(
+                        activity: liveActivity.activity,
+                        isNotched: viewModel.layoutKind == .notched,
+                        notchRect: viewModel.notchRect,
+                        panelWidth: viewModel.expandedSize.width,
+                        palette: palette
+                    )
+                }
             }
         }
     }
@@ -558,7 +560,7 @@ struct NotchContentView: View {
     }
 
     /// Invalidates and forgets ``clockTimer``. Called on `expandedBody`'s `.onDisappear`, so the clock never
-    /// ticks while the panel is a collapsed peek.
+    /// ticks while the panel is collapsed.
     private func stopClock() {
         clockTimer?.invalidate()
         clockTimer = nil
@@ -989,19 +991,11 @@ struct NotchContentView: View {
     ///    ``spotifyService/playbackState``'s own `.runningNoTrack`/`.notRunning` idle rendering, which by
     ///    this priority list is the only shape left for that state to be in whenever this is `nil`.
     private var activeNowPlaying: ActiveNowPlaying? {
-        if case .track(let now) = spotifyService.playbackState, now.isPlaying {
-            return spotifyActiveNowPlaying(now)
+        switch NowPlayingPick.pick(spotify: spotifyService.playbackState, system: systemNowPlayingService.playbackState) {
+        case .spotify(let now): return spotifyActiveNowPlaying(now)
+        case .system(let now): return systemActiveNowPlaying(now)
+        case nil: return nil
         }
-        if case .track(let now) = systemNowPlayingService.playbackState, now.isPlaying {
-            return systemActiveNowPlaying(now)
-        }
-        if case .track(let now) = spotifyService.playbackState {
-            return spotifyActiveNowPlaying(now)
-        }
-        if case .track(let now) = systemNowPlayingService.playbackState {
-            return systemActiveNowPlaying(now)
-        }
-        return nil
     }
 
     /// Builds ``ActiveNowPlaying`` from Spotify's own state, wiring transport (including `seek(to:)`)
@@ -1669,7 +1663,7 @@ private struct NotchBreadcrumbRow: View {
     }
 }
 
-/// Where a now-playing card's (or the collapsed peek's) artwork comes from: Spotify's own AppleScript
+/// Where a now-playing card's (or the collapsed wings') artwork comes from: Spotify's own AppleScript
 /// bridge hands back a URL to fetch (`AsyncImage`'s own job); `SystemNowPlayingService` hands back raw bytes
 /// it already has from `MediaRemote`; either source may have supplied neither at all.
 private enum NowPlayingArtwork {
@@ -1678,7 +1672,7 @@ private enum NowPlayingArtwork {
     case unavailable
 }
 
-/// The now-playing card's (and the collapsed peek's) single rendered source, already resolved from whichever
+/// The now-playing card's (and the collapsed wings') single rendered source, already resolved from whichever
 /// of ``NotchContentView/spotifyService``/``NotchContentView/systemNowPlayingService`` is currently active —
 /// see ``NotchContentView/activeNowPlaying`` for the priority between the two. A plain value type so the
 /// card's own rendering code (``NotchContentView/nowPlayingContent``, ``NotchContentView/nowPlayingArt(_:)``)
@@ -1762,80 +1756,135 @@ private struct NotchScrubBar: View {
     }
 }
 
-/// The collapsed pill's static peek: a blocked-count capsule in the left flank (only while `blockedCount >
-/// 0`) and 16x16 album art in the right flank (only while a track is loaded, dimmed while paused). No text
-/// beyond the blocked count, no marquee, no animation of any kind — the design spec is explicit that this
-/// is a static glance, not a second now-playing surface.
-///
-/// A separate `View` rather than inline in `NotchContentView.collapsedBody`, purely for readability: it has
-/// no state and no callbacks of its own.
-private struct NotchCollapsedPeek: View {
-    /// `NotchHerdModel.counts.blocked`. The left flank shows nothing at all when this is zero.
-    let blockedCount: Int
-
-    /// The active source's artwork (from either service — see `NotchContentView.activeNowPlaying`'s own
-    /// priority list), or `nil` when nothing is playing anywhere. The right flank shows nothing at all when
-    /// this is `nil`; a paused track still shows its art (dimmed, per the design spec's "paused 55% opacity"
-    /// rule), whatever kind of artwork it is, per ``peekIsPlaying``.
-    let peekArtwork: NowPlayingArtwork?
-
-    /// Whether the active source is currently playing, ignored entirely when ``peekArtwork`` is `nil`.
-    let peekIsPlaying: Bool
-
-    /// Tokens for the current scheme.
+/// The live activity beside the collapsed notch. On a notched display the left wing ends at
+/// `notchRect.minX` and the right wing starts at `notchRect.maxX`; the widened mask clips whatever falls
+/// outside the current wings. On a pill display the same two halves sit inside the pill.
+private struct CollapsedWingsView: View {
+    let activity: CollapsedActivity
+    let isNotched: Bool
+    /// The cutout in this view's top-left-origin space.
+    let notchRect: CGRect
+    let panelWidth: CGFloat
     let palette: HerdPalette
 
-    var body: some View {
-        HStack {
-            if blockedCount > 0 {
-                HStack(spacing: 3) {
-                    Circle().fill(palette.blocked).frame(width: 6, height: 6)
-                    Text("\(blockedCount)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(palette.textPrimary)
-                }
-                .padding(.horizontal, 6)
-                .frame(height: 16)
-                .background(Color.white.opacity(0.08), in: Capsule())
-            }
-            Spacer(minLength: 0)
-            if let artwork = peekArtwork {
-                peekArtworkView(artwork)
-                    .frame(width: 16, height: 16)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-                    )
-                    .opacity(peekIsPlaying ? 1 : 0.55)
-            }
-        }
-        .padding(.horizontal, 6)
+    /// Wing width per side when only a glyph and a count show; the announce wing is wider and truncates.
+    private static let compactWing: CGFloat = 30
+    private static let announceWing: CGFloat = 150
+    private static let outerInset: CGFloat = 6
+
+    /// The notch fill is black in every color scheme, so wings there use fixed light foregrounds.
+    private var primary: Color { isNotched ? .white : palette.textPrimary }
+
+    private var announce: String? {
+        if case .playing(_, let text?) = activity, !text.isEmpty { return text }
+        return nil
     }
 
-    /// Renders ``peekArtwork``'s three cases; `.unavailable` (and a `.data` payload that fails to decode)
-    /// both draw nothing, matching this peek's own pre-existing behaviour for a track with no artwork URL at
-    /// all — the surrounding chrome (frame/clip/border/opacity) still draws in `body`, so a trackless-artwork
-    /// now-playing entry still shows as a faint bordered square, unchanged from before this file gained a
-    /// second source.
-    @ViewBuilder
-    private func peekArtworkView(_ artwork: NowPlayingArtwork) -> some View {
-        switch artwork {
-        case .url(let urlString):
-            AsyncImage(url: URL(string: urlString)) { image in
-                image.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Color.clear
-            }
-        case .data(let data):
-            if let nsImage = NSImage(data: data) {
-                Image(nsImage: nsImage).resizable().aspectRatio(contentMode: .fill)
+    var body: some View {
+        if activity != .none {
+            if isNotched {
+                let wing = announce == nil ? Self.compactWing : Self.announceWing
+                // Content is anchored to the cutout edges, so a wing width change only moves the outer
+                // edge and the content never jumps while the mask is still animating.
+                HStack(spacing: 0) {
+                    leading.padding(.leading, Self.outerInset).frame(width: wing, alignment: .trailing)
+                    Color.clear.frame(width: notchRect.width)
+                    trailing.padding(.trailing, Self.outerInset).frame(width: wing, alignment: .leading)
+                }
+                .animation(.easeInOut(duration: 0.22), value: wing)
+                .frame(height: notchRect.height)
+                .offset(x: notchRect.midX - panelWidth / 2)
             } else {
-                Color.clear
+                HStack(spacing: 8) {
+                    leading.frame(maxWidth: .infinity, alignment: .leading)
+                    trailing
+                }
+                .padding(.horizontal, 10)
+                .frame(width: NotchGeometry.defaultPillWidth, height: NotchGeometry.fallbackMenuBarHeight)
             }
-        case .unavailable:
-            Color.clear
         }
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        switch activity {
+        case .none:
+            EmptyView()
+        case .blocked:
+            Circle().fill(palette.blocked).frame(width: 7, height: 7)
+        case .playing(let bundleID, _):
+            HStack(spacing: 6) {
+                sourceIcon(bundleID)
+                if let announce {
+                    Text(announce)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+        case .agents:
+            Image(systemName: "sparkles").font(.system(size: 11, weight: .semibold)).foregroundStyle(isNotched ? Color.white : palette.working)
+        case .battery(_, let charging):
+            Image(systemName: charging ? "battery.100.bolt" : "battery.100")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(charging ? palette.done : primary)
+        }
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        switch activity {
+        case .none:
+            EmptyView()
+        case .blocked(let count), .agents(let count):
+            countText("\(count)")
+        case .playing:
+            EqualizerBars()
+        case .battery(let percent, _):
+            countText("\(percent)%")
+        }
+    }
+
+    private func countText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+    }
+
+    @ViewBuilder
+    private func sourceIcon(_ bundleID: String?) -> some View {
+        if let bundleID, let icon = AppIconCache.icon(for: bundleID) {
+            Image(nsImage: icon).resizable().frame(width: 18, height: 18)
+        } else {
+            Image(systemName: "music.note").font(.system(size: 12, weight: .semibold)).foregroundStyle(primary)
+        }
+    }
+}
+
+/// Four bars bouncing at different rates. Exists only while the activity is `.playing` and the notch is
+/// collapsed, so the repeat animation never runs while the panel is open or nothing plays.
+private struct EqualizerBars: View {
+    @State private var raised = false
+
+    private static let lows: [CGFloat] = [3, 5, 4, 3]
+    private static let highs: [CGFloat] = [11, 8, 12, 9]
+    private static let periods: [Double] = [0.45, 0.6, 0.5, 0.7]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<4, id: \.self) { index in
+                Capsule()
+                    .fill(Color.white.opacity(0.9))
+                    .frame(width: 2, height: raised ? Self.highs[index] : Self.lows[index])
+                    .animation(.easeInOut(duration: Self.periods[index]).repeatForever(autoreverses: true), value: raised)
+            }
+        }
+        .frame(height: 14)
+        .onAppear { raised = true }
+        .accessibilityHidden(true)
     }
 }

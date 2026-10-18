@@ -41,6 +41,7 @@ import QuartzCore
 /// are dispatched back onto the main actor explicitly with `Task { @MainActor in }`, because Core
 /// Animation's `CATransaction.setCompletionBlock` contract does not itself guarantee a call on any
 /// particular queue.
+@MainActor
 final class NotchAnimator {
 
     /// Expand duration: ~180ms ease-out, per the design's stated feel for the panel growing to greet the
@@ -51,11 +52,12 @@ final class NotchAnimator {
     /// linger.
     private static let collapseDuration: CFTimeInterval = 0.15
 
-    /// The mask's resting opacity while collapsed: not fully opaque, so the growth into
-    /// ``expandedOpacity`` reads as a small brightening rather than being a purely geometric grow with
-    /// nothing else moving. Cosmetic, not load-bearing: the size and corner-radius animation alone would
-    /// already be glitch-free without this.
-    private static let collapsedOpacity: Float = 0.92
+    /// Duration of the wings widening or shrinking while the mask rests collapsed.
+    private static let retargetDuration: CFTimeInterval = 0.22
+
+    /// The mask's resting opacity while collapsed. Fully opaque: the wings sit over the menu bar, where
+    /// anything less reads as a see-through grey bar beside the black cutout.
+    private static let collapsedOpacity: Float = 1
 
     /// The mask's resting opacity while expanded.
     private static let expandedOpacity: Float = 1.0
@@ -82,6 +84,18 @@ final class NotchAnimator {
 
     /// The expanded surface's corner radius, from `NotchLayout/cornerRadius`.
     private var expandedCornerRadius: CGFloat = 0
+
+    /// Where the mask is at rest or heading to, so a retarget can tell whether anything would change.
+    private var maskFrame: CGRect = .zero
+    private var maskCornerRadius: CGFloat = 0
+
+    /// What the mask is doing, for ``retargetCollapsed(frame:cornerRadius:)``.
+    private enum Phase { case restingCollapsed, collapsing, expandingOrExpanded }
+    private var phase: Phase = .restingCollapsed
+
+    /// Bumped on every phase change so a collapse completion that lost a race to a newer expand or reset
+    /// recognises itself as stale and does nothing.
+    private var phaseToken: UInt64 = 0
 
     /// Installs the mask on `containerLayer` and leaves it resting at the collapsed geometry until
     /// ``updateGeometry(collapsedFrame:collapsedCornerRadius:expandedFrame:expandedCornerRadius:)`` and
@@ -123,6 +137,9 @@ final class NotchAnimator {
     /// is implied. Used at initial panel creation and after a reconcile pass for a panel whose
     /// `NotchPresentation` is currently collapsed, collapsing, or suspended.
     func resetToCollapsed() {
+        // A running collapse keeps its phase and token: re-entering would let a later retarget's implicit
+        // animation replace it and fire its completion early. `collapseSettled` follows up with the retarget.
+        if phase != .collapsing { enter(.restingCollapsed) }
         setMaskInstantly(frame: collapsedFrame, cornerRadius: collapsedCornerRadius, opacity: Self.collapsedOpacity)
     }
 
@@ -130,6 +147,7 @@ final class NotchAnimator {
     /// `NotchPresentation` is currently expanding or expanded, so a screen-geometry change does not
     /// visibly snap an open panel back to its pill mid-session.
     func resetToExpanded() {
+        enter(.expandingOrExpanded)
         setMaskInstantly(frame: expandedFrame, cornerRadius: expandedCornerRadius, opacity: Self.expandedOpacity)
     }
 
@@ -144,6 +162,7 @@ final class NotchAnimator {
     ///   - onSettled: Invoked once, on the main actor, once the animation has actually run (or, under
     ///     Reduce Motion, immediately).
     func expand(generation: UInt64, reduceMotion: Bool, onSettled: @escaping @Sendable (UInt64) -> Void) {
+        enter(.expandingOrExpanded)
         animate(
             to: expandedFrame,
             cornerRadius: expandedCornerRadius,
@@ -158,6 +177,7 @@ final class NotchAnimator {
     /// Animates the mask from wherever it currently is to the collapsed geometry, honouring Reduce Motion.
     /// Same contract as ``expand(generation:reduceMotion:onSettled:)``, mirrored for collapse.
     func collapse(generation: UInt64, reduceMotion: Bool, onSettled: @escaping @Sendable (UInt64) -> Void) {
+        let token = enter(.collapsing)
         animate(
             to: collapsedFrame,
             cornerRadius: collapsedCornerRadius,
@@ -165,8 +185,48 @@ final class NotchAnimator {
             duration: reduceMotion ? 0 : Self.collapseDuration,
             timingFunction: CAMediaTimingFunction(name: .easeIn),
             generation: generation,
-            onSettled: onSettled
+            onSettled: onSettled,
+            afterSettle: { [weak self] in self?.collapseSettled(token: token) }
         )
+    }
+
+    /// Moves the resting collapsed shape (the notch's wings) to `frame`, without touching the reducer.
+    ///
+    /// At rest collapsed it animates with no `onSettled`: no interaction state changed, so there is no
+    /// generation to echo. While expanding or expanded it only stores the target for the next `collapse`.
+    /// While collapsing it stores it too, and that collapse's completion follows up with one retarget.
+    func retargetCollapsed(frame: CGRect, cornerRadius: CGFloat) {
+        collapsedFrame = frame
+        collapsedCornerRadius = cornerRadius
+        guard phase == .restingCollapsed, maskDiffersFromCollapsed else { return }
+        animate(
+            to: frame,
+            cornerRadius: cornerRadius,
+            opacity: Self.collapsedOpacity,
+            duration: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Self.retargetDuration,
+            timingFunction: CAMediaTimingFunction(name: .easeInEaseOut),
+            generation: 0,
+            onSettled: nil
+        )
+    }
+
+    private var maskDiffersFromCollapsed: Bool {
+        maskFrame != collapsedFrame || maskCornerRadius != collapsedCornerRadius
+    }
+
+    @discardableResult
+    private func enter(_ newPhase: Phase) -> UInt64 {
+        phase = newPhase
+        phaseToken &+= 1
+        return phaseToken
+    }
+
+    private func collapseSettled(token: UInt64) {
+        guard token == phaseToken, phase == .collapsing else { return }
+        phase = .restingCollapsed
+        if maskDiffersFromCollapsed {
+            retargetCollapsed(frame: collapsedFrame, cornerRadius: collapsedCornerRadius)
+        }
     }
 
     /// Shared animate-or-snap implementation for ``expand(generation:reduceMotion:onSettled:)`` and
@@ -178,19 +238,24 @@ final class NotchAnimator {
         duration: CFTimeInterval,
         timingFunction: CAMediaTimingFunction,
         generation: UInt64,
-        onSettled: @escaping @Sendable (UInt64) -> Void
+        onSettled: (@Sendable (UInt64) -> Void)?,
+        afterSettle: (@MainActor @Sendable () -> Void)? = nil
     ) {
         guard duration > 0 else {
             setMaskInstantly(frame: frame, cornerRadius: cornerRadius, opacity: opacity)
-            onSettled(generation)
+            afterSettle?()
+            onSettled?(generation)
             return
         }
+        maskFrame = frame
+        maskCornerRadius = cornerRadius
         CATransaction.begin()
         CATransaction.setAnimationDuration(duration)
         CATransaction.setAnimationTimingFunction(timingFunction)
         CATransaction.setCompletionBlock {
             Task { @MainActor in
-                onSettled(generation)
+                afterSettle?()
+                onSettled?(generation)
             }
         }
         // Implicit actions are left enabled here on purpose: this is what lets a retarget mid-flight pick
@@ -206,6 +271,8 @@ final class NotchAnimator {
     /// rather than picking up whatever animation duration happens to be ambient on the current run loop
     /// turn.
     private func setMaskInstantly(frame: CGRect, cornerRadius: CGFloat, opacity: Float) {
+        maskFrame = frame
+        maskCornerRadius = cornerRadius
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         maskLayer.bounds = CGRect(origin: .zero, size: frame.size)
