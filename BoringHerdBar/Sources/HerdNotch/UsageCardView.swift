@@ -52,7 +52,7 @@ enum UsageFormat {
     }
 }
 
-/// One provider's block on the System page: name, plan, a thin bar per window, and its state.
+/// One provider's block on the Herd page: name, plan, a thin bar per window, and its state.
 struct UsageCardView: View {
     let provider: UsageProvider
     let snapshot: UsageSnapshot?
@@ -82,7 +82,7 @@ struct UsageCardView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(isNotSetUp ? palette.textSecondary : palette.textPrimary)
             if let plan = snapshot?.plan {
-                Text(plan).font(.system(size: 11)).foregroundStyle(palette.textTertiary)
+                Text(plan).font(.system(size: 11)).foregroundStyle(palette.textTertiary).lineLimit(1)
             }
             Spacer(minLength: 4)
             if let note = UsageStatus.note(for: snapshot, now: now) {
@@ -139,5 +139,50 @@ struct UsageCardView: View {
         if percent >= Double(criticalPercent) { return palette.blocked }
         if percent >= Double(warnPercent) { return palette.working }
         return palette.done
+    }
+}
+
+/// The Herd page's usage card: header plus one ``UsageCardView`` per enabled provider, scrolling when they
+/// overflow. Refreshes stale snapshots (never forced) whenever it appears.
+struct UsagePageCard: View {
+    let frame: CGRect
+    let palette: HerdPalette
+    let now: Date
+    @ObservedObject var usage: UsageService
+    @ObservedObject private var preferences = NotchPreferences.shared
+
+    private static let cardRadius: CGFloat = 16
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            content.padding(12).frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+        .background(palette.cardFill)
+        .overlay(
+            RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous))
+        .position(x: frame.midX, y: frame.midY)
+        .onAppear { usage.refreshIfStale() }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("USAGE")
+                .font(.system(size: 12, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(palette.textSecondary)
+            let providers = UsageProvider.allCases.filter { preferences.enabledUsageProviders.contains($0) }
+            if providers.isEmpty {
+                Text("No providers enabled").font(.system(size: 13)).foregroundStyle(palette.textTertiary)
+            }
+            ForEach(providers, id: \.self) { provider in
+                UsageCardView(
+                    provider: provider, snapshot: usage.snapshots[provider], palette: palette, now: now,
+                    warnPercent: preferences.usageWarnPercent, criticalPercent: preferences.usageCriticalPercent)
+            }
+        }
     }
 }

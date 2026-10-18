@@ -10,7 +10,8 @@ public actor UsageFetcher {
     /// A provider that has not answered by then is abandoned for this pass; the next pass tries it again.
     public static let fetchTimeout: TimeInterval = 120
     /// How long a non-forced fetch reuses the latest answer; matches the poll interval, so only the timer hits the network.
-    public static let reuseInterval: TimeInterval = 5 * 60
+    /// Just above the 5-min poll plus its timer leeway, so an open right before the timer fires reuses.
+    public static let reuseInterval: TimeInterval = 6 * 60
 
     private let sources: [UsageProvider: any UsageSource]
     private let now: @Sendable () -> Date

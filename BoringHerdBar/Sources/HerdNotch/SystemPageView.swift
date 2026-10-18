@@ -2,16 +2,14 @@ import HerdPanelUI
 import NotchCore
 import NotchGeometry
 import SwiftUI
-import UsageKit
 
-/// The System page: usage, power and keep-awake cards at their ``SystemLayout`` frames. The shelf is not drawn
+/// The System page: power and keep-awake cards (now playing and reminders are drawn by `NotchContentView`) at their ``SystemLayout`` frames. The shelf is not drawn
 /// here; `NotchContentView` keeps it on both pages. No animation anywhere on this page.
 struct SystemPageView: View {
     let layout: SystemLayout
     let palette: HerdPalette
     /// The band clock's tick, so "45m left" counts down without a timer of its own.
     let now: Date
-    @ObservedObject var usage: UsageService
     @ObservedObject var power: PowerInfoService
     @ObservedObject var battery: BatteryService
     @ObservedObject var keepAwake: KeepAwakeService
@@ -25,12 +23,10 @@ struct SystemPageView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            card(layout.usage) { usageContent }
             card(layout.power) { powerContent }
             card(layout.keepAwake, padding: keepAwakeMetrics.padding) { keepAwakeContent }
         }
         .frame(width: layout.shelf.maxX + BentoLayout.margin, height: layout.shelf.maxY + BentoLayout.margin, alignment: .topLeading)
-        .onAppear { usage.refreshIfStale() }
     }
 
     // MARK: - Chrome
@@ -56,23 +52,6 @@ struct SystemPageView: View {
             .font(.system(size: 12, weight: .semibold))
             .tracking(0.8)
             .foregroundStyle(palette.textSecondary)
-    }
-
-    // MARK: - Usage
-
-    private var usageContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header("USAGE")
-            let providers = UsageProvider.allCases.filter { preferences.enabledUsageProviders.contains($0) }
-            if providers.isEmpty {
-                Text("No providers enabled").font(.system(size: 13)).foregroundStyle(palette.textTertiary)
-            }
-            ForEach(providers, id: \.self) { provider in
-                UsageCardView(
-                    provider: provider, snapshot: usage.snapshots[provider], palette: palette, now: now,
-                    warnPercent: preferences.usageWarnPercent, criticalPercent: preferences.usageCriticalPercent)
-            }
-        }
     }
 
     // MARK: - Power

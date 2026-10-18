@@ -5,32 +5,33 @@ import Testing
 
 @Suite struct BentoLayoutTests {
 
-    @Test func reproducesPreviousHardCodedFrames() {
-        // Old panel was 720x344 with no shelf; 344 + 88 (shelf 76 + gutter 12) is the same card area.
-        let layout = BentoLayout(panel: CGSize(width: 720, height: 344 + 88))
-
-        #expect(layout.band == CGRect(x: 0, y: 0, width: 720, height: 44))
-        #expect(layout.agents == CGRect(x: 16, y: 54, width: 424, height: 274))
-        #expect(layout.nowPlaying == CGRect(x: 452, y: 54, width: 252, height: 128))
-        #expect(layout.reminders == CGRect(x: 452, y: 194, width: 252, height: 134))
-    }
-
     @Test func defaultSizeFrames() {
         let layout = BentoLayout(panel: CGSize(width: 760, height: 432))
 
-        #expect(layout.agents == CGRect(x: 16, y: 54, width: 464, height: 274))
-        #expect(layout.nowPlaying == CGRect(x: 492, y: 54, width: 252, height: 128))
-        #expect(layout.reminders == CGRect(x: 492, y: 194, width: 252, height: 134))
+        #expect(layout.band == CGRect(x: 0, y: 0, width: 760, height: 44))
+        #expect(layout.agents == CGRect(x: 16, y: 54, width: 416, height: 274))
+        #expect(layout.usage == CGRect(x: 444, y: 54, width: 300, height: 274))
         #expect(layout.shelf == CGRect(x: 16, y: 340, width: 728, height: 76))
     }
 
     @Test func minimumSizeFrames() {
         let layout = BentoLayout(panel: CGSize(width: 720, height: 320))
 
-        #expect(layout.agents == CGRect(x: 16, y: 54, width: 424, height: 162))
-        #expect(layout.nowPlaying == CGRect(x: 452, y: 54, width: 252, height: 75))
-        #expect(layout.reminders == CGRect(x: 452, y: 141, width: 252, height: 75))
+        #expect(layout.agents == CGRect(x: 16, y: 54, width: 376, height: 162))
+        #expect(layout.usage == CGRect(x: 404, y: 54, width: 300, height: 162))
         #expect(layout.shelf == CGRect(x: 16, y: 228, width: 688, height: 76))
+    }
+
+    /// One usage row: 78 label + 46 percent + 56 reset + 3 gaps of 8, plus the card's 12pt padding each side.
+    @Test(arguments: [
+        CGSize(width: 720, height: 320), CGSize(width: 760, height: 432), CGSize(width: 1000, height: 560),
+    ])
+    func usageColumnFitsRowsWithABarAndAgentsStayReadable(panel: CGSize) {
+        let layout = BentoLayout(panel: panel)
+        let fixedRowWidth: CGFloat = 78 + 46 + 56 + 3 * 8 + 2 * 12
+
+        #expect(layout.usage.width - fixedRowWidth >= 60)
+        #expect(layout.agents.width >= 376)
     }
 
     @Test(arguments: [720, 760, 1000])
@@ -50,7 +51,7 @@ import Testing
     ])
     func framesDoNotOverlapAndStayInsidePanel(panel: CGSize) {
         let layout = BentoLayout(panel: panel)
-        let cards = [layout.agents, layout.nowPlaying, layout.reminders, layout.shelf]
+        let cards = [layout.agents, layout.usage, layout.shelf]
         let bounds = CGRect(origin: .zero, size: panel)
 
         for (index, frame) in cards.enumerated() {

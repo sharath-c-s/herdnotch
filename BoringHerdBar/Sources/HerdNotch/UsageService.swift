@@ -4,7 +4,7 @@ import UsageKit
 
 /// Polls plan usage for the enabled providers every 5 minutes, off the main thread, and publishes the latest snapshots.
 ///
-/// No timer exists while every provider is disabled. ``refreshIfStale(maxAge:)`` lets the System page pull a
+/// No timer exists while every provider is disabled. ``refreshIfStale(maxAge:)`` lets the Herd page pull a
 /// reading when it opens, but the fetcher reuses an answer under 5 minutes old, so only the timer hits the network.
 @MainActor
 final class UsageService: ObservableObject {

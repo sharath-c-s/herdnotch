@@ -8,8 +8,10 @@ public struct SystemLayout: Equatable, Sendable {
     public let bandLeftWidget: CGRect
     public let bandRightWidget: CGRect
     public let shelf: CGRect
-    /// Left column, full card height.
-    public let usage: CGRect
+    /// Left column, top.
+    public let nowPlaying: CGRect
+    /// Left column, below now playing.
+    public let reminders: CGRect
     /// Right column, top.
     public let power: CGRect
     /// Right column, bottom.
@@ -25,7 +27,14 @@ public struct SystemLayout: Equatable, Sendable {
         let cardsBottom = bento.shelf.minY - BentoLayout.gutter
         let cardsHeight = max(0, cardsBottom - BentoLayout.cardsTop)
         let rightX = panel.width - BentoLayout.margin - BentoLayout.rightColumnWidth
-        usage = bento.agents
+        let leftWidth = max(0, rightX - BentoLayout.gutter - BentoLayout.margin)
+
+        // Fixed-height now playing, reminders take the rest, but never taller than half the column.
+        let nowPlayingH = max(0, min(BentoLayout.nowPlayingHeight, (cardsHeight - BentoLayout.gutter) / 2))
+        nowPlaying = CGRect(x: BentoLayout.margin, y: BentoLayout.cardsTop, width: leftWidth, height: nowPlayingH)
+        let remindersY = BentoLayout.cardsTop + nowPlayingH + BentoLayout.gutter
+        reminders = CGRect(
+            x: BentoLayout.margin, y: remindersY, width: leftWidth, height: max(0, cardsBottom - remindersY))
 
         // Two equal cards split the column; the gutter sits between them.
         let powerH = max(0, ((cardsHeight - BentoLayout.gutter) / 2).rounded(.down))

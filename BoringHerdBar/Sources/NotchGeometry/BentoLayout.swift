@@ -3,14 +3,16 @@ import CoreGraphics
 /// The expanded notch panel's card frames, derived from the panel size. Coordinates are SwiftUI-style:
 /// origin top-left, y growing down, relative to the panel's own bounds.
 ///
-/// At `720x432` (the old `720x344` plus the shelf strip) the band and the three cards match the previous
-/// hard-coded frames exactly.
+/// The Herd page: agents card on the left, usage card in a full-height right column.
 public struct BentoLayout: Equatable, Sendable {
     public static let margin: CGFloat = 16
     public static let gutter: CGFloat = 12
     public static let bandHeight: CGFloat = 44
     public static let cardsTop: CGFloat = 54
+    /// The System page's right column (power, keep awake).
     public static let rightColumnWidth: CGFloat = 252
+    /// The Herd page's right column: wide enough for a usage row (78 label, bar, 46 percent, 56 reset, 8 spacing, 12 padding).
+    public static let usageColumnWidth: CGFloat = 300
     public static let nowPlayingHeight: CGFloat = 128
     public static let shelfHeight: CGFloat = 76
 
@@ -21,8 +23,7 @@ public struct BentoLayout: Equatable, Sendable {
     public let bandLeftWidget: CGRect
     public let bandRightWidget: CGRect
     public let agents: CGRect
-    public let nowPlaying: CGRect
-    public let reminders: CGRect
+    public let usage: CGRect
     /// The full-width strip at the bottom, inside the margins.
     public let shelf: CGRect
 
@@ -37,19 +38,10 @@ public struct BentoLayout: Equatable, Sendable {
 
         let cardsBottom = shelfY - Self.gutter
         let cardsHeight = max(0, cardsBottom - Self.cardsTop)
-        let rightX = panel.width - Self.margin - Self.rightColumnWidth
+        let rightX = panel.width - Self.margin - Self.usageColumnWidth
         agents = CGRect(
             x: Self.margin, y: Self.cardsTop,
             width: max(0, rightX - Self.gutter - Self.margin), height: cardsHeight)
-
-        // Same split as before (fixed-height now-playing, reminders take the rest), but never taller than
-        // half the column, so a short panel does not squash reminders.
-        let nowPlayingH = max(0, min(Self.nowPlayingHeight, (cardsHeight - Self.gutter) / 2))
-        nowPlaying = CGRect(
-            x: rightX, y: Self.cardsTop, width: Self.rightColumnWidth, height: nowPlayingH)
-        let remindersY = Self.cardsTop + nowPlayingH + Self.gutter
-        reminders = CGRect(
-            x: rightX, y: remindersY, width: Self.rightColumnWidth,
-            height: max(0, cardsBottom - remindersY))
+        usage = CGRect(x: rightX, y: Self.cardsTop, width: Self.usageColumnWidth, height: cardsHeight)
     }
 }

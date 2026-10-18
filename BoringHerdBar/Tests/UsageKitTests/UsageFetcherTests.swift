@@ -276,7 +276,7 @@ import Testing
         runner.release()
     }
 
-    @Test func nonForcedFetchesReuseTheLatestAnswerForFiveMinutes() async throws {
+    @Test func nonForcedFetchesReuseTheLatestAnswerForTheReuseInterval() async throws {
         let h = try harness { _ in json(429, "{}", headers: ["Retry-After": "0"]) }
         defer { try? FileManager.default.removeItem(at: h.home) }
         let first = await h.fetcher.fetch(.claude)
@@ -287,7 +287,7 @@ import Testing
             #expect(await h.fetcher.fetch(.claude, force: false) == first)
         }
         #expect(h.usageCalls == calls)
-        h.clock.advance(60)
+        h.clock.advance(120)
         _ = await h.fetcher.fetch(.claude, force: false)
         #expect(h.usageCalls > calls)
     }

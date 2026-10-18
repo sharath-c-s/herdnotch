@@ -11,7 +11,7 @@ import Testing
     @Test(arguments: panels)
     func cardsDoNotOverlapAndStayInsidePanel(panel: CGSize) {
         let layout = SystemLayout(panel: panel)
-        let frames = [layout.usage, layout.power, layout.keepAwake, layout.shelf]
+        let frames = [layout.nowPlaying, layout.reminders, layout.power, layout.keepAwake, layout.shelf]
         let bounds = CGRect(origin: .zero, size: panel)
 
         for (index, frame) in frames.enumerated() {
@@ -35,12 +35,18 @@ import Testing
     }
 
     @Test(arguments: panels)
-    func cardsFillTheSameAreaAsBentoCards(panel: CGSize) {
+    func leftColumnStacksNowPlayingAndRemindersRightColumnStacksPowerAndKeepAwake(panel: CGSize) {
         let system = SystemLayout(panel: panel)
-        let bento = BentoLayout(panel: panel)
+        let rightX = panel.width - BentoLayout.margin - BentoLayout.rightColumnWidth
 
-        #expect(system.usage == bento.agents)
-        #expect(system.power.minX == bento.nowPlaying.minX)
+        #expect(system.nowPlaying.minX == BentoLayout.margin)
+        #expect(system.reminders.minX == BentoLayout.margin)
+        #expect(system.nowPlaying.width == rightX - BentoLayout.gutter - BentoLayout.margin)
+        #expect(system.reminders.width == system.nowPlaying.width)
+        #expect(system.nowPlaying.minY == BentoLayout.cardsTop)
+        #expect(system.reminders.minY - system.nowPlaying.maxY == BentoLayout.gutter)
+        #expect(system.shelf.minY - system.reminders.maxY == BentoLayout.gutter)
+        #expect(system.power.minX == rightX)
         #expect(system.power.width == BentoLayout.rightColumnWidth)
         #expect(system.keepAwake.width == BentoLayout.rightColumnWidth)
         #expect(system.power.minY == BentoLayout.cardsTop)
@@ -48,9 +54,18 @@ import Testing
         #expect(system.shelf.minY - system.keepAwake.maxY == BentoLayout.gutter)
     }
 
-    @Test func minimumSizeSplitsTheRightColumnEvenly() {
+    @Test func nowPlayingKeepsItsHeightWhenThereIsRoom() {
+        let layout = SystemLayout(panel: CGSize(width: 760, height: 432))
+
+        #expect(layout.nowPlaying == CGRect(x: 16, y: 54, width: 464, height: 128))
+        #expect(layout.reminders == CGRect(x: 16, y: 194, width: 464, height: 134))
+    }
+
+    @Test func minimumSizeSplitsBothColumnsEvenly() {
         let layout = SystemLayout(panel: CGSize(width: 720, height: 320))
 
+        #expect(layout.nowPlaying == CGRect(x: 16, y: 54, width: 424, height: 75))
+        #expect(layout.reminders == CGRect(x: 16, y: 141, width: 424, height: 75))
         #expect(layout.power == CGRect(x: 452, y: 54, width: 252, height: 75))
         #expect(layout.keepAwake == CGRect(x: 452, y: 141, width: 252, height: 75))
     }

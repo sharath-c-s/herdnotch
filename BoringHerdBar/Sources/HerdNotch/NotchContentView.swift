@@ -62,7 +62,7 @@ struct NotchContentView: View {
     /// Battery health, watts and time remaining, for the System page and the battery ring's tooltip.
     @ObservedObject var powerInfoService: PowerInfoService
 
-    /// Plan usage snapshots for the System page.
+    /// Plan usage snapshots for the Herd page usage card.
     @ObservedObject var usageService: UsageService
 
     /// The shared macOS Reminders bridge, feeding ``remindersCard``. Shared for the same reason
@@ -259,7 +259,7 @@ struct NotchContentView: View {
     // MARK: - Expanded surface: the bento
 
     /// The whole open panel: a near-black gradient ground, the utility band and its one hairline, the
-    /// notch/pill dead zone painted over whatever would otherwise sit beneath it, and the three cards at
+    /// notch/pill dead zone painted over whatever would otherwise sit beneath it, and the cards at
     /// their exact ``Bento`` frames.
     ///
     /// Every element is placed with `.position(x:y:)` at the design spec's own absolute panel coordinates
@@ -279,15 +279,17 @@ struct NotchContentView: View {
             // A plain content swap: no animation, same expanded frame, shelf on both pages.
             if viewModel.page == .system {
                 SystemPageView(
-                    layout: systemLayout, palette: palette, now: now, usage: usageService, power: powerInfoService,
+                    layout: systemLayout, palette: palette, now: now, power: powerInfoService,
                     battery: batteryService, keepAwake: keepAwakeService, caffeinate: caffeinateService,
                     lid: lidSleepController
                 )
                 .opacity(heroReveal)
-            } else {
-                agentsHeroCard
                 nowPlayingCard
                 remindersCard
+            } else {
+                agentsHeroCard
+                UsagePageCard(frame: layout.usage, palette: palette, now: now, usage: usageService)
+                    .opacity(heroReveal)
             }
             shelfCard
         }
@@ -593,7 +595,7 @@ struct NotchContentView: View {
     ///
     /// - Parameters:
     ///   - frame: The card's exact bento frame.
-    ///   - isHovering: This card's own hover flag, so three cards can each brighten independently.
+    ///   - isHovering: This card's own hover flag, so cards can each brighten independently.
     ///   - content: The card's own interior, already expected to apply its own padding.
     private func bentoCard<Content: View>(
         frame: CGRect,
@@ -964,7 +966,7 @@ struct NotchContentView: View {
     // MARK: - Now-playing card
 
     private var nowPlayingCard: some View {
-        bentoCard(frame: layout.nowPlaying, isHovering: $isNowPlayingCardHovering) {
+        bentoCard(frame: systemLayout.nowPlaying, isHovering: $isNowPlayingCardHovering) {
             nowPlayingContent
                 .padding(Bento.cardPadding)
         }
@@ -1178,7 +1180,7 @@ struct NotchContentView: View {
     // MARK: - Reminders card
 
     private var remindersCard: some View {
-        bentoCard(frame: layout.reminders, isHovering: $isRemindersCardHovering) {
+        bentoCard(frame: systemLayout.reminders, isHovering: $isRemindersCardHovering) {
             VStack(alignment: .leading, spacing: 8) {
                 remindersHeader
                 remindersBody
