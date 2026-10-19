@@ -259,16 +259,9 @@ public extension AgentStatus {
 }
 
 public extension HerdAgent {
-    /// The identifier shown wherever an agent is named.
-    ///
-    /// Prefers herdr's own tab label, which is what the user named the work (`catalog_version_diff`), and
-    /// falls back to the working directory's basename (`catalog-svd`) only when there is no label. No
-    /// cleverness beyond that: a tab genuinely labelled `claude` is shown as `claude`, because that is
-    /// what herdr itself shows and second-guessing it would be a lie.
-    var displayIdentifier: String {
-        if let tabLabel, !tabLabel.isEmpty { return tabLabel }
-        return cwdBasename
-    }
+    /// The identifier shown wherever an agent is named: ``HerdAgent/displayName``, which prefers the Claude
+    /// session name over herdr's tab label and falls back to the working directory's basename.
+    var displayIdentifier: String { displayName }
 
     /// Last path component of the working directory.
     var cwdBasename: String {

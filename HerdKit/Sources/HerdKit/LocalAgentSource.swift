@@ -52,8 +52,10 @@ public struct LocalAgentSource: AgentSource {
     /// Like ``sessions()``, but agents matching `excluded` are dropped before any transcript read or
     /// grouping, so no work is spent on agents ``AgentSourceMerge`` would discard anyway
     /// (see ``AgentSourceMerge/isDuplicate(_:knownSessionIds:)``).
-    public func sessions(excluding excluded: (HerdAgent) -> Bool) -> [HerdSession] {
-        let agents = claudeAgents(excluding: excluded) + codexAgents().filter { !excluded($0) }
+    ///
+    /// - Parameter entries: Live registry entries already read this poll, to avoid a second read.
+    public func sessions(excluding excluded: (HerdAgent) -> Bool, entries: [ClaudeRegistryEntry]? = nil) -> [HerdSession] {
+        let agents = claudeAgents(excluding: excluded, entries: entries) + codexAgents().filter { !excluded($0) }
         guard !agents.isEmpty else { return [] }
         return [HerdSession(
             name: Self.sessionName, isDefault: false, running: true, socketPath: "",
@@ -63,8 +65,13 @@ public struct LocalAgentSource: AgentSource {
 
     // MARK: - Claude
 
-    func claudeAgents(excluding excluded: (HerdAgent) -> Bool = { _ in false }) -> [HerdAgent] {
-        registry.liveEntries().compactMap { entry in
+    /// One registry read, shared with the herdr name join in ``AgentSourceMerge/snapshot``.
+    public func liveClaudeEntries() -> [ClaudeRegistryEntry] { registry.liveEntries() }
+
+    func claudeAgents(
+        excluding excluded: (HerdAgent) -> Bool = { _ in false }, entries: [ClaudeRegistryEntry]? = nil
+    ) -> [HerdAgent] {
+        (entries ?? registry.liveEntries()).compactMap { entry in
             let tty = processes.tty(of: entry.pid)
             let chain = processes.parentChainHasHerdr(of: entry.pid)
             func make(_ status: AgentStatus) -> HerdAgent {
@@ -72,7 +79,8 @@ public struct LocalAgentSource: AgentSource {
                     agent: "claude", agentStatus: status, cwd: entry.cwd,
                     paneId: "local:\(entry.pid)", tabId: "local:\(entry.pid)", workspaceId: "local:\(entry.pid)",
                     agentSessionID: entry.sessionId, agentSessionSource: "local:claude",
-                    tabLabel: entry.name.isEmpty ? nil : entry.name,
+                    claudeSessionName: entry.name.isEmpty ? nil : entry.name,
+                    claudeSessionNameSource: entry.name.isEmpty ? nil : entry.nameSource,
                     source: .local, pid: entry.pid, tty: tty, parentChainHasHerdr: chain
                 )
             }

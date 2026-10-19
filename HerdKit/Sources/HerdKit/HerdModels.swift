@@ -156,6 +156,11 @@ public struct HerdAgent: Codable, Sendable, Identifiable, Hashable {
     /// appeared or vanished between the two round trips. Callers must be able to render without it.
     public var tabLabel: String?
 
+    /// Claude Code's session name, joined from the session registry like ``tabLabel`` (so `nil` in herdr JSON).
+    public var claudeSessionName: String?
+    /// Who set ``claudeSessionName``: `user`, `auto` or `derived`. See ``displayName``.
+    public var claudeSessionNameSource: String?
+
     /// Stored as optionals so payloads without these keys (every herdr `agent.list` reply) keep decoding.
     private let origin: AgentOrigin?
     private let chainHasHerdr: Bool?
@@ -183,6 +188,8 @@ public struct HerdAgent: Codable, Sendable, Identifiable, Hashable {
         agentSessionID: String? = nil,
         agentSessionSource: String? = nil,
         tabLabel: String? = nil,
+        claudeSessionName: String? = nil,
+        claudeSessionNameSource: String? = nil,
         source: AgentOrigin = .herdr,
         pid: Int32? = nil,
         tty: String? = nil,
@@ -204,6 +211,17 @@ public struct HerdAgent: Codable, Sendable, Identifiable, Hashable {
         self.agentSession = (agentSessionID == nil && agentSessionSource == nil)
             ? nil : AgentSessionRef(value: agentSessionID, source: agentSessionSource)
         self.tabLabel = tabLabel
+        self.claudeSessionName = claudeSessionName
+        self.claudeSessionNameSource = claudeSessionNameSource
+    }
+
+    /// The name shown and searched for this agent: a user-set session name, Claude's auto title, the tab
+    /// label, any other session name (derived), then the cwd basename. Empty strings are skipped.
+    public var displayName: String {
+        let session = claudeSessionName.flatMap { $0.isEmpty ? nil : $0 }
+        let tab = tabLabel.flatMap { $0.isEmpty ? nil : $0 }
+        if let session, claudeSessionNameSource == "user" || claudeSessionNameSource == "auto" { return session }
+        return tab ?? session ?? HerdPaneSearch.basename(of: cwd)
     }
 
     /// Display ordering for agents inside one workspace: by status, then by `cwd` alphabetically.

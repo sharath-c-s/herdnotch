@@ -143,6 +143,8 @@ public enum HerdPaneField: String, Sendable, CaseIterable {
     case agentKind
     /// The owning session's name.
     case sessionName
+    /// The herdr tab label when a Claude session name overrides it as the displayed name.
+    case herdrTab
 }
 
 /// One pane that matched a query, with everything the result row needs to render itself.
@@ -208,6 +210,7 @@ public enum HerdPaneSearch {
         case .cwd: 70
         case .agentKind: 50
         case .sessionName: 40
+        case .herdrTab: 90
         }
     }
 
@@ -284,17 +287,20 @@ public enum HerdPaneSearch {
     /// - Parameters:
     ///   - field: Which text to return.
     ///   - pane: The pane to read it from.
-    /// - Returns: The field's searchable text. For ``HerdPaneField/tabLabel`` this falls back to the
-    ///   `cwd` basename when herdr reported no label, which is the same fallback the panel row uses, so
-    ///   what the user sees is always what they can search for.
+    /// - Returns: The field's searchable text. For ``HerdPaneField/tabLabel`` this is
+    ///   ``HerdAgent/displayName``, the name the panel row shows, so what the user sees is always what
+    ///   they can search for.
     public static func text(of field: HerdPaneField, for pane: HerdPane) -> String {
         switch field {
         case .tabLabel:
-            if let label = pane.agent.tabLabel, !label.isEmpty { return label }
-            return basename(of: pane.agent.cwd)
+            return pane.agent.displayName
         case .cwd: return pane.agent.cwd
         case .agentKind: return pane.agent.agent
         case .sessionName: return pane.session.name
+        case .herdrTab:
+            // Empty when the tab label is already the displayed name, so it is not searched twice.
+            guard let tab = pane.agent.tabLabel, !tab.isEmpty, tab != pane.agent.displayName else { return "" }
+            return tab
         }
     }
 
@@ -302,7 +308,7 @@ public enum HerdPaneSearch {
     ///
     /// - Parameter path: An absolute or relative path.
     /// - Returns: The final component, or `/` for the root.
-    private static func basename(of path: String) -> String {
+    static func basename(of path: String) -> String {
         let trimmed = path.hasSuffix("/") ? String(path.dropLast()) : path
         return trimmed.isEmpty ? "/" : (trimmed.split(separator: "/").last.map(String.init) ?? trimmed)
     }

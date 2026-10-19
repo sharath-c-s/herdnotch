@@ -81,7 +81,7 @@ final class NotchHerdModel: ObservableObject {
     /// Lets search rows show an activity line without triggering any transcript read of their own.
     @Published private(set) var activityByTranscriptID: [String: AgentActivity] = [:]
 
-    /// Key identifying one agent across polls for ``recency``: `(session.name, agent.displayIdentifier)`,
+    /// Key identifying one agent across polls for ``recency``: `(session.name, tab label or cwd basename)`,
     /// not `agent.paneId`. herdr can hand a pane a fresh id after a tab reattaches to the same running
     /// work, and the design spec's shortlist wants that continuity — "this is still the agent it was" —
     /// preserved across a pane-id change the user never sees.
@@ -490,7 +490,8 @@ final class NotchHerdModel: ObservableObject {
     private static func recencyKey(session: HerdSession, agent: HerdAgent) -> RecencyKey {
         RecencyKey(
             sessionName: session.name,
-            displayIdentifier: agent.source == .local ? agent.paneId : agent.displayIdentifier)
+            displayIdentifier: agent.source == .local
+                ? agent.paneId : (agent.tabLabel.flatMap { $0.isEmpty ? nil : $0 } ?? agent.cwdBasename))
     }
 
     /// How many of the first listed agents get a transcript read each poll.

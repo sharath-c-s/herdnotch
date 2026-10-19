@@ -7,16 +7,19 @@ public struct ClaudeRegistryEntry: Sendable, Equatable {
     public let cwd: String
     /// Claude's own `name` for the session, empty when absent.
     public let name: String
+    /// Who set ``name``: observed `user` (/rename), `auto` (Claude's title), `derived`. Empty when absent.
+    public let nameSource: String
     /// Raw registry status: observed `busy`, `idle`, `shell`.
     public let status: String
     /// Process start as whole epoch seconds, parsed from the `procStart` string, which Claude writes in UTC.
     public let procStart: Int64?
 
-    public init(pid: Int32, sessionId: String, cwd: String, name: String, status: String, procStart: Int64?) {
+    public init(pid: Int32, sessionId: String, cwd: String, name: String, nameSource: String = "", status: String, procStart: Int64?) {
         self.pid = pid
         self.sessionId = sessionId
         self.cwd = cwd
         self.name = name
+        self.nameSource = nameSource
         self.status = status
         self.procStart = procStart
     }
@@ -74,6 +77,7 @@ public struct ClaudeSessionRegistry: Sendable {
         return ClaudeRegistryEntry(
             pid: pid, sessionId: sessionId, cwd: cwd,
             name: obj["name"] as? String ?? "",
+            nameSource: obj["nameSource"] as? String ?? "",
             status: obj["status"] as? String ?? "",
             procStart: (obj["procStart"] as? String).flatMap { parseProcStart($0) }
         )

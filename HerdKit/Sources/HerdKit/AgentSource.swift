@@ -63,16 +63,43 @@ public enum AgentSourceMerge {
     public static func snapshot(
         mode: AgentSourceMode, wantsLocal: Bool, builder: HerdSnapshotBuilder, local: LocalAgentSource
     ) -> HerdSnapshot {
-        guard mode != .herdr else { return builder.build() }
-        let herdr = mode == .local ? [] : HerdrSource(builder: builder).sessions()
+        // One registry read serves both the herdr name join and the local agents.
+        let entries = mode == .local ? nil : local.liveClaudeEntries()
+        guard mode != .herdr else {
+            let built = builder.build()
+            return HerdSnapshot(sessions: named(built.sessions, entries: entries ?? []), counts: built.counts)
+        }
+        let herdr = mode == .local ? [] : named(HerdrSource(builder: builder).sessions(), entries: entries ?? [])
         // Agents the merge would drop never reach the transcript reader.
         let known = knownSessionIds(herdr)
         let localSession = wantsLocal
-            ? local.sessions(excluding: { mode == .both && isDuplicate($0, knownSessionIds: known) }).first : nil
+            ? local.sessions(excluding: { mode == .both && isDuplicate($0, knownSessionIds: known) }, entries: entries).first : nil
         let sessions = merge(herdr: herdr, local: localSession, mode: mode)
         return HerdSnapshot(
             sessions: sessions,
             counts: StatusCounts(agents: sessions.lazy.flatMap(\.workspaces).flatMap(\.agents)))
+    }
+
+    /// Copies of `sessions` whose agents carry the Claude session name of the live registry entry with the
+    /// same ``HerdAgent/agentSessionID``. Agents with no match are returned untouched.
+    public static func named(_ sessions: [HerdSession], entries: [ClaudeRegistryEntry]) -> [HerdSession] {
+        let byId = Dictionary(entries.filter { !$0.name.isEmpty }.map { ($0.sessionId, $0) }, uniquingKeysWith: { a, _ in a })
+        guard !byId.isEmpty else { return sessions }
+        return sessions.map { session in
+            var session = session
+            session.workspaces = session.workspaces.map { workspace in
+                var workspace = workspace
+                workspace.agents = workspace.agents.map { agent in
+                    guard let entry = agent.agentSessionID.flatMap({ byId[$0] }) else { return agent }
+                    var agent = agent
+                    agent.claudeSessionName = entry.name
+                    agent.claudeSessionNameSource = entry.nameSource
+                    return agent
+                }
+                return workspace
+            }
+            return session
+        }
     }
 
     /// Session ids herdr already reports, for ``isDuplicate(_:knownSessionIds:)``.

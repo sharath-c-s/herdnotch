@@ -56,10 +56,10 @@ struct LocalAgentSourceTests {
     private static var procStartEpoch: Int64 { ClaudeSessionRegistry.parseProcStart(procStartText)! }
 
     private func writeEntry(_ dir: URL, pid: Int32, sessionId: String = "sess", cwd: String = "/p/a",
-        status: String = "idle", name: String = "nm", procStart: String = LocalAgentSourceTests.procStartText) throws
+        status: String = "idle", name: String = "nm", nameSource: String = "", procStart: String = LocalAgentSourceTests.procStartText) throws
     {
         let obj: [String: Any] = ["pid": pid, "sessionId": sessionId, "cwd": cwd, "status": status,
-            "name": name, "procStart": procStart]
+            "name": name, "nameSource": nameSource, "procStart": procStart]
         try JSONSerialization.data(withJSONObject: obj).write(to: dir.appendingPathComponent("\(pid).json"))
     }
 
@@ -121,6 +121,45 @@ struct LocalAgentSourceTests {
         #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent("12.json").path))
     }
 
+    /// A herdr agent whose `agent_session.value` is "sid-1", behind a one-agent herdr config root.
+    private func herdrBuilder() throws -> HerdSnapshotBuilder {
+        let root = try tempDir()
+        let sock = root.appendingPathComponent("herdr.sock")
+        #expect(FileManager.default.createFile(atPath: sock.path, contents: nil))
+        var list = try #require(try JSONSerialization.jsonObject(with: Fixture.data("agent_list")) as? [String: Any])
+        var result = try #require(list["result"] as? [String: Any])
+        var agents = try #require(result["agents"] as? [[String: Any]])
+        agents = agents.filter { $0["pane_id"] as? String == "w1:pF" }
+        agents[0]["agent_session"] = ["value": "sid-1", "source": "herdr:claude"]
+        result["agents"] = agents
+        list["result"] = result
+        var line = try JSONSerialization.data(withJSONObject: list)
+        line.append(UInt8(ascii: "\n"))
+        let serving = FakeConnector.Route.serving([
+            "workspace.list": [try Fixture.wireLine("workspace_list")],
+            "agent.list": [line],
+            "tab.list": [try Fixture.wireLine("tab_list")],
+        ])
+        return HerdSnapshotBuilder(configRoot: root, connector: FakeConnector(routes: [sock.path: serving]))
+    }
+
+    private func claudeLocal() throws -> LocalAgentSource {
+        let dir = try tempDir()
+        try writeEntry(dir, pid: 10, sessionId: "sid-1", name: "nightly", nameSource: "user")
+        let procs = FakeProcs(procs: [10: .init(start: Self.procStartEpoch)])
+        return LocalAgentSource(registry: ClaudeSessionRegistry(directory: dir, processes: procs), processes: procs)
+    }
+
+    @Test(arguments: [AgentSourceMode.herdr, AgentSourceMode.both])
+    func snapshotNamesHerdrAgentFromRegistry(mode: AgentSourceMode) throws {
+        let snapshot = AgentSourceMerge.snapshot(
+            mode: mode, wantsLocal: true, builder: try herdrBuilder(), local: try claudeLocal())
+        let agents = snapshot.sessions.flatMap(\.workspaces).flatMap(\.agents)
+        let named = try #require(agents.first { $0.agentSessionID == "sid-1" })
+        #expect(named.displayName == "nightly")
+        #expect(!snapshot.sessions.contains { $0.name == LocalAgentSource.sessionName })
+    }
+
     @Test func registryTreatsEPERMAsAlive() throws {
         // The fake's isAlive models kill(pid, 0) == -1 with errno EPERM as true; the real inspector does the same.
         let dir = try tempDir()
@@ -164,7 +203,7 @@ struct LocalAgentSourceTests {
         let busy = try #require(byPid[30])
         #expect(busy.agentStatus == .working)
         #expect(busy.paneId == "local:30" && busy.tabId == "local:30" && busy.workspaceId == "local:30")
-        #expect(busy.agentSessionID == "abc" && busy.tabLabel == "my-agent" && busy.tty == "ttys004")
+        #expect(busy.agentSessionID == "abc" && busy.claudeSessionName == "my-agent" && busy.tabLabel == nil && busy.tty == "ttys004")
         #expect(busy.source == .local && busy.parentChainHasHerdr)
         #expect(byPid[31]?.agentStatus == .unknown)
         #expect(byPid[32]?.agentStatus == .blocked)
