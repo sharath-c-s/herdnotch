@@ -113,4 +113,35 @@ import Testing
         #expect(!core.manualOn)
         #expect(!core.shouldHold)
     }
+
+    @Test func holdReasonIsOffWhenNothingHolds() {
+        #expect(KeepAwakeCore().holdReason == .off)
+        #expect(busyCore(working: false).holdReason == .off)
+    }
+
+    @Test func holdReasonManualBeatsAgent() {
+        var core = KeepAwakeCore()
+        core.setManual(on: true, minutes: nil)
+        #expect(core.holdReason == .manual)
+        var busy = busyCore(working: true)
+        busy.setManual(on: true, minutes: nil)
+        #expect(busy.holdReason == .manual)
+    }
+
+    @Test func holdReasonAgentWhenOnlyAgentsHold() {
+        #expect(busyCore(working: true).holdReason == .agent)
+    }
+
+    @Test func holdReasonConditionWhenAnotherConditionAlsoHolds() {
+        var core = KeepAwakeCore()
+        core.setConditions(KeepAwakeConditions(anyAgentWorking: true, onCharger: true))
+        core.setInputs(KeepAwakeInputs(anyAgentWorking: true, onCharger: true), batteryPercent: nil)
+        #expect(core.holdReason == .condition)
+    }
+
+    @Test func holdReasonIsOffWhileSnoozed() {
+        var core = busyCore(working: true)
+        core.setManual(on: false, minutes: nil)
+        #expect(core.holdReason == .off)
+    }
 }

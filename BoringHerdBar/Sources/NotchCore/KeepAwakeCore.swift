@@ -1,5 +1,10 @@
 import Foundation
 
+/// Why the core wants the assertion held right now; drives the collapsed-notch cup's look.
+public enum KeepAwakeReason: Sendable, Equatable {
+    case off, manual, agent, condition
+}
+
 /// The keep-awake decision state machine: a manual layer, the automatic conditions, and a snooze that lets a
 /// manual "off" beat a condition that is still true. Pure; the service owns the assertion and the lid.
 public struct KeepAwakeCore: Equatable, Sendable {
@@ -21,6 +26,15 @@ public struct KeepAwakeCore: Equatable, Sendable {
     public var conditionsHold: Bool { conditions.shouldHold(inputs) }
 
     public var shouldHold: Bool { manualOn || (!conditionsSnoozed && conditionsHold) }
+
+    /// `.agent` only when the busy-agents condition is the sole true reason; any other condition makes it `.condition`.
+    public var holdReason: KeepAwakeReason {
+        guard shouldHold else { return .off }
+        if manualOn { return .manual }
+        var withoutAgents = inputs
+        withoutAgents.anyAgentWorking = false
+        return conditions.shouldHold(withoutAgents) ? .condition : .agent
+    }
 
     /// The auto-off to arm when acquiring now: only a manual hold takes a timer.
     public var acquireAutoOffMinutes: Int? { manualOn ? manualMinutes : nil }

@@ -249,6 +249,8 @@ struct NotchContentView: View {
                     CollapsedWingsView(
                         activity: liveActivity.activity,
                         caffeinated: caffeinateService.isActive,
+                        keepAwakeReason: keepAwakeService.holdReason,
+                        lidMode: keepAwakeService.lidModeEnabled,
                         isNotched: viewModel.layoutKind == .notched,
                         notchRect: viewModel.notchRect,
                         panelWidth: viewModel.expandedSize.width,
@@ -1764,11 +1766,15 @@ private struct CollapsedWingsView: View {
     let activity: CollapsedActivity
     /// Whether keep-awake holds its assertion; shown as a cup at the left wing's outer edge in every state.
     let caffeinated: Bool
+    /// Why it is held; ignored while ``caffeinated`` is false (the live assertion wins over the core).
+    let keepAwakeReason: KeepAwakeReason
+    let lidMode: Bool
     let isNotched: Bool
     /// The cutout in this view's top-left-origin space.
     let notchRect: CGRect
     let panelWidth: CGFloat
     let palette: HerdPalette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Wing width per side when only a glyph and a count show; the announce wing is wider and truncates.
     private static let compactWing: CGFloat = 46
@@ -1816,10 +1822,8 @@ private struct CollapsedWingsView: View {
     }
 
     private var caffeinateIcon: some View {
-        Image(systemName: caffeinated ? "cup.and.saucer.fill" : "cup.and.saucer")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(primary)
-            .opacity(caffeinated ? 1 : 0.4)
+        KeepAwakeCup(
+            active: caffeinated, reason: keepAwakeReason, lidMode: lidMode, isNotched: isNotched, palette: palette)
     }
 
     @ViewBuilder
@@ -1828,7 +1832,7 @@ private struct CollapsedWingsView: View {
         case .none:
             EmptyView()
         case .blocked:
-            Circle().fill(palette.blocked).frame(width: 7, height: 7)
+            WavingHand(isNotched: isNotched, palette: palette)
         case .playing(let bundleID, _):
             HStack(spacing: 6) {
                 sourceIcon(bundleID)
@@ -1842,6 +1846,7 @@ private struct CollapsedWingsView: View {
             }
         case .agents:
             Image(systemName: "sparkles").font(.system(size: 11, weight: .semibold)).foregroundStyle(isNotched ? Color.white : palette.working)
+                .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
         case .battery(_, let charging):
             Image(systemName: charging ? "battery.100.bolt" : "battery.100")
                 .font(.system(size: 11, weight: .semibold))

@@ -15,6 +15,7 @@ final class KeepAwakeService: ObservableObject {
 
     /// The user's manual choice, distinct from whether the assertion is held for an automatic reason.
     @Published private(set) var manualOn = false
+    @Published private(set) var holdReason: KeepAwakeReason = .off
     @Published private(set) var lidModeEnabled = false
     @Published private(set) var lidActive = false
 
@@ -132,6 +133,7 @@ final class KeepAwakeService: ObservableObject {
         lid.reconcile(want: core.wantsLid(assertionActive: caffeinate.isActive, lidSetUp: lid.isSetUp))
         if core.lidModeEnabled != lidModeEnabled { lidModeEnabled = core.lidModeEnabled }
         if core.manualOn != manualOn { manualOn = core.manualOn }
+        if core.holdReason != holdReason { holdReason = core.holdReason }
     }
 
     /// The lid controller finished a `pmset` run, which happens off the main actor and after ``evaluate()`` returned.
