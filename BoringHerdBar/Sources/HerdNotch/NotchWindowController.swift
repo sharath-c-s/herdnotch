@@ -364,8 +364,9 @@ final class NotchWindowController: NSObject {
     /// Each live display's latest layout, so a wings change can recompute frames without a reconcile pass.
     private var layouts: [NotchDisplayID: NotchLayout] = [:]
 
-    /// Wing width per side while the wings just show their glyph and count.
-    private static let compactWingWidth: CGFloat = 30
+    /// Wing width per side while the wings just show their glyph and count. Matches
+    /// `CollapsedWingsView.compactWing`, which also fits the keep-awake cup.
+    private static let compactWingWidth: CGFloat = 46
 
     /// Wing width per side while a track-change announce shows "Title · Artist".
     private static let announceWingWidth: CGFloat = 150
@@ -600,10 +601,10 @@ final class NotchWindowController: NSObject {
             let screen = screenFrames[display]
         else { return plain }
         let wingWidth: CGFloat
+        // `.none` still widens: the keep-awake cup always shows, so the wings never fold away.
         switch liveActivity.activity {
-        case .none: return plain
         case .playing(_, let announce?) where !announce.isEmpty: wingWidth = Self.announceWingWidth
-        case .blocked, .playing, .agents, .battery: wingWidth = Self.compactWingWidth
+        case .none, .blocked, .playing, .agents, .battery: wingWidth = Self.compactWingWidth
         }
         let radius = Self.wingsCornerRadius
         let mask = NotchGeometry.wingsFrame(

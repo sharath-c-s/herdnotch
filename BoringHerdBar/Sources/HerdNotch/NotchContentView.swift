@@ -248,6 +248,7 @@ struct NotchContentView: View {
                 if preferences.showLiveActivity, viewModel.presentation == .collapsed {
                     CollapsedWingsView(
                         activity: liveActivity.activity,
+                        caffeinated: caffeinateService.isActive,
                         isNotched: viewModel.layoutKind == .notched,
                         notchRect: viewModel.notchRect,
                         panelWidth: viewModel.expandedSize.width,
@@ -1761,6 +1762,8 @@ private struct NotchScrubBar: View {
 /// outside the current wings. On a pill display the same two halves sit inside the pill.
 private struct CollapsedWingsView: View {
     let activity: CollapsedActivity
+    /// Whether keep-awake holds its assertion; shown as a cup at the left wing's outer edge in every state.
+    let caffeinated: Bool
     let isNotched: Bool
     /// The cutout in this view's top-left-origin space.
     let notchRect: CGRect
@@ -1768,7 +1771,7 @@ private struct CollapsedWingsView: View {
     let palette: HerdPalette
 
     /// Wing width per side when only a glyph and a count show; the announce wing is wider and truncates.
-    private static let compactWing: CGFloat = 30
+    private static let compactWing: CGFloat = 46
     private static let announceWing: CGFloat = 150
     private static let outerInset: CGFloat = 6
 
@@ -1781,7 +1784,7 @@ private struct CollapsedWingsView: View {
     }
 
     var body: some View {
-        if activity != .none {
+        Group {
             if isNotched {
                 let wing = announce == nil ? Self.compactWing : Self.announceWing
                 // Content is anchored to the cutout edges, so a wing width change only moves the outer
@@ -1805,8 +1808,22 @@ private struct CollapsedWingsView: View {
         }
     }
 
-    @ViewBuilder
     private var leading: some View {
+        HStack(spacing: 6) {
+            caffeinateIcon
+            activityLeading
+        }
+    }
+
+    private var caffeinateIcon: some View {
+        Image(systemName: caffeinated ? "cup.and.saucer.fill" : "cup.and.saucer")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(primary)
+            .opacity(caffeinated ? 1 : 0.4)
+    }
+
+    @ViewBuilder
+    private var activityLeading: some View {
         switch activity {
         case .none:
             EmptyView()
