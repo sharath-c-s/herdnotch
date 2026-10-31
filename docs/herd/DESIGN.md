@@ -1,6 +1,6 @@
-# boring-herd — visual direction
+# HerdNotch — visual direction
 
-Applies to `BoringHerdBar`'s popover and, later, to the fork's Herd tab. Dark mode is the primary and default target; light mode must remain legible but is not where the design is tuned.
+Applies to the retired menu bar app's popover and, later, to the fork's Herd tab. Dark mode is the primary and default target; light mode must remain legible but is not where the design is tuned.
 
 ## Thesis
 

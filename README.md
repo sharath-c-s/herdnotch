@@ -1,8 +1,8 @@
-# bar for herd
+# HerdNotch
 
-A macOS menu bar panel that shows every [herdr](https://herdr.dev) session, its workspaces, and the AI coding agents running in them, with live status. It answers one question at a glance: **which of my agents needs me right now?**
+HerdNotch turns the notch on your Mac into a small control room for your AI coding agents. If you run several Claude Code or Codex sessions at once, you know the problem: one of them finished ten minutes ago, another one is stuck on a permission prompt, and you only find out when you go looking. HerdNotch answers one question without a click: which of my agents needs me right now?
 
-Built and running against a real herd of 16 agents across 4 sessions.
+It works with [herdr](https://herdr.dev), the terminal workspace manager for agents, and it also works without it. It reads your local Claude Code and Codex sessions directly.
 
 ## Install
 
@@ -10,139 +10,61 @@ Built and running against a real herd of 16 agents across 4 sessions.
 brew install sharath-c-s/tap/herdnotch
 ```
 
-HerdNotch needs macOS 14 or later on Apple silicon. It is not notarized, so the cask removes the download quarantine flag after install; without that step macOS refuses to open it. To build from source instead, see [Building](#building). Maintainers cut a release with `scripts/release.sh <version>`.
+You need macOS 14 or later on Apple silicon. HerdNotch is not notarized yet, so the cask removes the download quarantine flag for you; without that step macOS refuses to open the app. To update later, run `brew upgrade --cask herdnotch`.
 
-## What it does
+## What you see
 
-- **Ledger panel.** One monospaced readout, fixed `SESSION / WORKSPACE / AGENT / KIND` columns, with session and workspace printed only when they change so grouping appears as whitespace. Every column is measured from the values actually on screen at the chosen type size, so the panel is as wide as its content and no wider. The real herd of 16 agents across 4 sessions comes out 441 × 318.5 pt at the smallest type step, 564.5 × 410 pt at the default, and 688 × 491.5 pt at the largest, with no scrolling at any step.
-- **Urgency ordering.** Blocked first, then done, then recently completed, then working, then unknown, then idle, with stopped sessions last. Sorted hierarchically so a session is ranked by its most urgent member and the column elision never interleaves. Stable for equal rank, so rows do not reshuffle under the cursor at 1 Hz. `done` is what herdr reports directly; "recently completed" is inferred from `working -> idle` plus a clock, and ranks below it because a guess should not outrank a statement.
-- **One hue per state.** Red for blocked, green for done, amber for working, blue for idle, grey for unknown, plus a distinct shape and a weight step for each, so the states stay separable in greyscale and to anyone who cannot tell red from green. Every colour clears 4.5:1 against both the panel surface and the row hover where it is drawn as text, and 3:1 where it is only a mark, and a test asserts it. Note this **deliberately does not match herdr's own palette**, which draws a completed agent in blue: herdr is a closed binary whose config exposes colour values but not the status-to-colour mapping, so the two cannot be reconciled from this side.
-- **Status roll-up in the menu bar itself**, so the common case needs no click.
-- **Global shortcut and fuzzy search** over every pane, opened by pressing **fn twice**. Subsequence matching with word-start and prefix bonuses, weighted tab label over cwd over agent kind over session name, so `catver` finds `catalog_version_diff`. On an empty query it lists every pane in **flat** urgency order, which is the same ranking the panel applies but resolved across all sessions at once rather than within each workspace, because a flat list has no grouping to explain an interleaved sequence. The shortcut is configurable in the settings window and takes effect without a relaunch.
-- **Click to focus** a pane, a workspace, or a session in its terminal.
-- **Transient popup** when an agent becomes blocked or finishes, coalescing when several land at once.
-- **Detached sessions are marked.** A herdr session can be running, with agents working, while no terminal is attached to it. Those are labelled `no terminal` on a line of their own under the session name, and do not pretend a switch is possible. On its own line rather than beside the name because beside it the marker was measured into the `SESSION` column, and one detached session then set that column's width for every row in the panel.
-- **Remote sessions**, through a socket forwarded with `ssh -L`. Marked `remote`, and never claim a local window can be raised for them.
-- **A settings window** covering every preference, reached from the status item's right-click menu.
+When the notch is closed, it grows two small wings. They show the one thing that matters most at that moment. An agent that waits for your input comes first, with a waving hand and a count. If nothing needs you and music plays, you see the app that plays it with a small equalizer, and the song title slides in for a few seconds when the track changes. Otherwise you see how many agents are busy, and when nothing at all is happening, your battery level. A small cup on the left wing tells you whether keep-awake is on, and why: steam for a manual hold, sparkles when busy agents hold it, and a moon when lid-closed mode is armed.
 
-## Running without herdr
+When an agent finishes or starts waiting for you, a short toast drops from the notch and the edges of the screen glow in that agent's colour, so you notice it even when you look at another window.
 
-HerdNotch works with or without herdr. Set the source in Settings > Agents > Source: herdr only, local only, or both.
+Move the pointer onto the notch and it opens. The Herd page lists every agent with its status, ordered by urgency, next to your plan usage for Claude, Codex, OpenCode Go and Antigravity. The System page holds now playing with a seek bar, your Reminders, battery and power details, and the keep-awake controls. A shelf at the bottom keeps files you drag onto the notch until you drag them out again.
 
-In local mode, HerdNotch reads Claude Code sessions from `~/.claude/sessions`. It reads Codex sessions from running `codex` processes and from `~/.codex/sessions`.
+Agents carry the name you gave the session. If you renamed a Claude session with `/rename`, HerdNotch uses that name; otherwise it uses Claude's own title, then the herdr tab name, then the folder. Click an agent to jump to it: HerdNotch finds the iTerm2 or Terminal tab, the tmux pane, or the IDE window that runs it.
 
-In "both" mode, herdr agents come from herdr. Everything else comes from the local sources.
+## With or without herdr
 
-Jump-to-agent detects the host of a session: an iTerm2 or Terminal tab, a tmux pane, an IntelliJ or VS Code window, or otherwise the app. You can turn this off in Settings. Remote sessions need herdr.
+In Settings > Agents > Source you choose herdr only, local only, or both. In local mode HerdNotch reads Claude Code sessions from `~/.claude/sessions` and Codex sessions from `~/.codex/sessions` and the running `codex` processes. In "both" mode, agents that run inside herdr come from herdr and everything else comes from the local sources, without duplicates.
 
-## Usage meters
+herdr sessions on another machine work too, if you forward their socket with `ssh -L` and list the local socket path under "Scan extra socket paths" in Settings. Those sessions are marked `remote`, and HerdNotch never tries to raise a local window for them.
 
-The notch shows usage meters for Claude, Codex, OpenCode Go, and Antigravity. HerdNotch reads credentials from the Keychain and from the CLI auth files. It only reads them. It never refreshes or writes a credential.
+## Keep awake
 
-## Now playing
+Keep-awake stops your Mac from going to sleep while you want it awake. You can turn it on by hand, with an optional timer, or let rules do it: while agents are busy, while certain apps run, on the charger, or with an external display. Lid-closed mode goes one step further and keeps the Mac awake with the lid shut. That needs a one-time setup in Settings, because macOS only allows it through `pmset`, which needs administrator rights.
 
-The now-playing card works without Xcode tools. It runs through `/usr/bin/perl` and the vendored mediaremote-adapter. Drag the progress bar to seek. The seek applies when you release.
+## Your credentials
 
-## Layout
+The usage meters read your credentials from the Keychain and from the CLI auth files. HerdNotch only reads them. It never refreshes, rewrites or sends a credential anywhere except to the provider's own usage endpoint, so it cannot log you out of your CLI tools.
 
-| Path | What |
-|---|---|
-| `HerdKit/` | The herdr protocol client. Pure Foundation, no UI, 58 tests. Newline-delimited JSON over the per-session Unix domain sockets, session discovery (local and forwarded), snapshot assembly, fuzzy search ranking, and the pure urgency ordering. |
-| `BoringHerdBar/` | The app. `LSUIElement` menu bar host, the `HerdPanelUI` library holding the ledger view and palette (25 tests), the `HerdShortcut` library holding the configurable global shortcut (11 tests), search, popup, settings window, focus service, and terminal window locator. |
-| `karabiner/` | The Karabiner-Elements rule that turns a double tap of `fn` into `F19`, plus an idempotent installer for it. |
-| `docs/herd/` | `FEATURES.md`, `PLAN.md`, `DESIGN.md`. Written as a record of what was decided and, more usefully, what was tried and abandoned. |
+## The search shortcut
 
-## Building
-
-No Xcode required, which is deliberate: only Command Line Tools are needed.
+Press **fn** twice to open search over every agent. Type a few letters (`catver` finds `catalog_version_diff`) and press Return to jump there. macOS cannot register `fn` as a normal shortcut, so HerdNotch listens for `F19` and a small Karabiner-Elements rule turns a double tap of `fn` into `F19`. Install the rule with:
 
 ```sh
-cd BoringHerdBar
-./build.sh          # swift build, assemble the .app, ad-hoc codesign
-open BoringHerdBar.app
+./karabiner/install-fn-rule.sh
 ```
 
-Tests need explicit framework flags, because XCTest ships only with Xcode and the suite uses swift-testing:
+The script backs up your Karabiner config first and adds the rule next to your existing ones. If the emoji picker also opens on the tap, set System Settings > Keyboard > "Press the globe key to" > "Do Nothing". You can also pick any other shortcut in Settings.
+
+## Building from source
+
+You need Xcode 26 or later. The tests use Swift Testing and the views use SwiftUI macros, and both need a full Xcode, not only the Command Line Tools.
 
 ```sh
-cd HerdKit
-FW=/Library/Developer/CommandLineTools/Library/Developer/Frameworks
-swift test -Xswiftc -F -Xswiftc $FW -Xswiftc -Xfrontend \
-           -Xswiftc -disable-cross-import-overlay-search -Xlinker -rpath -Xlinker $FW
+cd HerdNotch
+DEVELOPER_DIR=/Applications/Xcode.app bash build-notch.sh   # builds, assembles and signs HerdNotch.app
+open HerdNotch.app
+
+swift test                    # app tests
+(cd ../HerdKit && swift test) # herdr client and agent sources
 ```
 
-Plain `swift test` exits 0 having silently run nothing, because SwiftPM's generated runner guards its entry point behind `#if canImport(Testing)` and per-target settings never reach that generated target. The flags must be on the command line.
+The repo has two Swift packages. `HerdKit` talks to herdr and reads the local agent sources; it has no UI. `HerdNotch` is the app: the notch, its pages, the keep-awake and usage services, and the pure decision logic in `NotchCore`, which carries most of the tests. Releases are cut with `scripts/release.sh <version>` from a clean `main`.
 
-The `BoringHerdBar` package has tests too, and they need the same flags:
+## Known limits
 
-```sh
-cd BoringHerdBar
-swift test -Xswiftc -F -Xswiftc $FW -Xswiftc -Xfrontend \
-           -Xswiftc -disable-cross-import-overlay-search -Xlinker -rpath -Xlinker $FW
-```
+HerdNotch is ad-hoc signed, so macOS does not let it post system notifications; the toast and the screen glow are its alerts instead. A Developer ID signature would fix that and would also let macOS remember its permissions across updates.
 
-Two other traps worth knowing: adding a file to `HerdKit` does not invalidate `BoringHerdBar/.build/release.yaml`, so delete the stale build plan or the app compiles against the old file set; and `NSAppleEventsUsageDescription` must be present in the bundle, because without it macOS *terminates* the process on its first Apple event rather than prompting.
+## Credits
 
-## The fn double-press shortcut
-
-The default shortcut is **fn fn**, a double tap of the globe key. It is not a Carbon shortcut and cannot be: `RegisterEventHotKey` takes a virtual key code plus a modifier mask, and `fn` is neither. It is not in Carbon's modifier vocabulary, and the raw `fn` key arrives as a `flagsChanged` event the hot-key mechanism never sees. The only in-process way to observe it is a `CGEventTap` on `flagsChanged`, which needs the Input Monitoring TCC permission.
-
-So the app registers **`F19`** and a Karabiner-Elements rule turns a double tap of `fn` into `F19`. `F19` is a deliberate choice: no Apple keyboard has that key, so nothing on this machine can generate it and nothing else is listening for it. The app stays dependency-free and needs no extra permission, because it never learns that `fn` was involved.
-
-Install the rule:
-
-```sh
-./karabiner/install-fn-rule.sh            # append or update
-./karabiner/install-fn-rule.sh --dry-run  # show what would change
-./karabiner/install-fn-rule.sh --remove   # take it out again
-```
-
-It backs `~/.config/karabiner/karabiner.json` up first, **appends** rather than replacing so existing complex modifications survive, and matches the rule by its `description`, so running it twice leaves one copy. Karabiner reloads within about a second; no restart.
-
-**You may also need to stop macOS acting on the fn tap itself.** The rule forwards `fn` through, deliberately, so `fn`+arrow, `fn`+delete and `fn`+`F1` keep working. macOS's globe-key action fires on that forwarded tap, and Karabiner does not suppress it. So if the emoji picker (or input-source switcher, or dictation) opens as well, set **System Settings > Keyboard > "Press the globe key to" > "Do Nothing"**, or:
-
-```sh
-defaults write com.apple.HIToolbox AppleFnUsageType -int 0
-```
-
-then log out and back in. Try it first: whether Karabiner's virtual keyboard triggers the globe action at all was not verified here, because it needs a physical key press.
-
-Any other shortcut is settable in the settings window: click the field, press a combination. It takes effect immediately, Delete resets to `fn fn`, and a combination another application already owns is reported inline instead of silently doing nothing.
-
-## Remote herdr sessions
-
-`herdr --remote <ssh-target>` is an **attach** mechanism, not a session type. It bridges a local client's stdin and stdout over SSH to a herdr server on the far host, so that session's socket lives on that host and no local scan will ever find it.
-
-What does work is forwarding the socket. `ssh -L` can forward a Unix domain socket to a local path, and once one exists every call in this app works against it unchanged:
-
-```sh
-# One remote session, forwarded to a local path.
-ssh -N -L /tmp/herd-remote/prod.sock:/home/you/.config/herdr/herdr.sock you@prod-host
-
-# A named remote session.
-ssh -N -L /tmp/herd-remote/prod_api.sock:/home/you/.config/herdr/sessions/api/herdr.sock you@prod-host
-```
-
-Then turn on **Scan extra socket paths** in the settings window and list either the sockets or the directory holding them, one per line. A directory picks up every `*.sock` directly inside it, so forwarding several into `/tmp/herd-remote` and listing that one path is enough.
-
-A remote session is named after its socket path (`prod_api.sock` becomes `prod_api`; a bare `herdr.sock` takes its parent directory's name), is marked **`remote`** in the panel, and never raises a local terminal, because the window hosting it is on another machine. A forward that is down shows as `remote  not reachable` rather than disappearing, and it fails fast: a missing or refused socket costs nothing, and a socket that accepts and then goes silent is bounded by a tighter call budget than a local session gets. Sessions are populated concurrently, so one unreachable remote costs one timeout rather than delaying every local row behind it.
-
-Keep the local path short. `sockaddr_un.sun_path` holds 104 bytes, and `$TMPDIR` on macOS is most of that on its own.
-
-## Two things that will bite you
-
-**No animations.** Any animation in flight over the popover keeps `GraphHost.flushTransactions` running on every pass of the run loop, so the process never sleeps. Measured 19% of a core with an animation present, 0.3% without, and a *finite* animation retriggered from the poll tick still cost 18%. It is not the `repeatForever`, it is having any animation over a backdrop AppKit recomposites per frame. Idle CPU with the panel open is 0.30–0.53% of one core over 75 to 80 seconds with four local sessions at 1 Hz (0.17% with the panel closed, where the poll backs off to 5 s), and 1.05% with two forwarded remotes added on top (six sessions, one of them proxied). Keep it there.
-
-**Notifications cannot be authorized for an ad-hoc signed bundle.** `UNUserNotificationCenter` returns `UNErrorDomain Code=1`. The code path is exercised but no banner can appear, so the transient popup is the only working alert surface. A Developer ID signature fixes it.
-
-## Earlier boringNotch integration
-
-An earlier plan integrated this as a third tab inside [boringNotch](https://github.com/TheBoredTeam/boring.notch). That work never compiled and was removed from the tree, because it carried GPL-3 boringNotch code. It remains in git history before the commit that removed `attic/`.
-
-Notable from that effort: the boringNotch app is sandboxed, so it cannot read `~/.config/herdr/**` at all, and a subprocess inherits the sandbox. The standalone app has no such problem.
-
-## Status
-
-Working and in daily use. Known follow-ups are recorded at the end of `docs/herd/PLAN.md`, including VoiceOver gaps and the terminal window match using `contains` where it should be exact.
-
-Two earlier follow-ups are closed. herdr's `done` state is now a first-class `AgentStatus` rather than folding to `unknown`. **Dynamic Type is closed as superseded rather than built**: the ledger's column widths are measured by CoreText at an exact point size *before* layout, so the size has to be a number the code holds rather than a multiplier resolved inside a view body, and macOS ships no Dynamic Type control comparable to iOS's for that multiplier to come from. The settings window's five-step text size control is the tunable this actually needed, and it moves the whole scale together, including the row height, the gutter and the sigil diameters, which per-`Text` text styles could not. The full reasoning is in `HerdLedgerScale`'s doc comment in `BoringHerdBar/Sources/HerdPanelUI/HerdLedgerColumns.swift`.
+The usage meters follow the approach of [OpenUsage](https://github.com/robinebers/openusage) (MIT). Now playing uses the vendored [mediaremote-adapter](https://github.com/ungive/mediaremote-adapter) (BSD-3-Clause). Some features were inspired by Vorssaint; no code was copied. See `NOTICE.md` for details. HerdNotch itself is MIT licensed.

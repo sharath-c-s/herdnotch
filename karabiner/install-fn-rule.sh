@@ -147,12 +147,12 @@ if [ -x "$KARABINER_CLI" ]; then
 fi
 
 if [ "$MODE" = "remove" ]; then
-    echo "==> removed. Set a different shortcut in Boring Herd Bar's settings window."
+    echo "==> removed. Set a different shortcut in HerdNotch's settings window."
 else
     cat <<'NOTE'
 ==> installed. Karabiner reloads within about a second; no restart needed.
 
-Press fn twice, quickly. Boring Herd Bar's / HerdNotch's pane search should open.
+Press fn twice, quickly. HerdNotch's pane search should open.
 Press left Control twice, quickly. HerdNotch's caffeinate toggle should fire (see `pmset -g assertions`).
 
 If the emoji picker opens as well, macOS is still acting on the fn tap itself. This rule deliberately

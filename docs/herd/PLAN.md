@@ -1,4 +1,6 @@
-# boring-herd — implementation plan
+# HerdNotch — implementation plan
+
+> Historical record. The menu bar app described here has been retired; HerdNotch (the notch app) replaced it.
 
 Companion to `FEATURES.md`. Feature numbers below refer to that document's section 4.
 
@@ -14,7 +16,7 @@ The fork remains the destination, but it is no longer the first delivery. Two th
 
 Hence:
 
-- **Track A, now, no Xcode: `BoringHerdBar`** — a standalone `LSUIElement` menu bar app. `NSStatusItem` shows the roll-up dots; clicking opens a panel with the session and agent list. Coexists with boringNotch permanently. This promotes feature 13 from "v1 fallback" to the primary v0 surface. Feature 4's roll-up moves from the collapsed notch into the status item, where it is arguably better anyway: always visible, no priority fight with music.
+- **Track A, now, no Xcode: the retired menu bar app** — a standalone `LSUIElement` menu bar app. `NSStatusItem` shows the roll-up dots; clicking opens a panel with the session and agent list. Coexists with boringNotch permanently. This promotes feature 13 from "v1 fallback" to the primary v0 surface. Feature 4's roll-up moves from the collapsed notch into the status item, where it is arguably better anyway: always visible, no priority fight with music.
 - **Track B, later, when Xcode lands: the fork.** Phases 2 through 5 exactly as written below, unchanged. This is what finally delivers "both in one notch".
 
 What makes the split nearly free: `HerdKit` is shared verbatim, and the SwiftUI list view is written host-agnostic (it takes a `HerdSnapshot` plus callbacks, and imports nothing from either host, no `Defaults`, no upstream types), so it lifts into the fork as-is. The genuine throwaway is roughly 80 lines of `NSStatusItem` and app-bundle glue, and even that survives as feature 13 for external displays, where there is no notch to put anything in.
@@ -24,9 +26,9 @@ One simplification Track A gets for free: a standalone app is **not sandboxed**,
 Repository layout, one repo, three coexisting parts:
 
 ```
-boring-herd/            fork of boring.notch, branch herd-panel
+herdnotch/             fork of boring.notch, branch herd-panel
   HerdKit/              shared SwiftPM package, pure Foundation, no UI      Track A + B
-  BoringHerdBar/        standalone menu bar app, SwiftPM executable         Track A
+  HerdNotch/           the app, SwiftPM executable                         Track A
   boringNotch/          the fork itself, .herd tab                          Track B
   BoringNotchXPCHelper/ herdr I/O for the sandboxed fork                    Track B
   docs/herd/            these documents
@@ -50,7 +52,7 @@ Do not write a line of feature code until this phase passes.
 
 1. **Install Xcode 26.** Currently only Command Line Tools are present (`xcode-select -p` → `/Library/Developer/CommandLineTools`). Then `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
    *Verify:* `xcodebuild -version` prints `Xcode 26.x`. Disk: 80 GiB free, Xcode wants roughly half.
-2. **Fork and clone.** Fork `TheBoredTeam/boring.notch` on GitHub, clone into `/Users/dev/playground/boring-herd` (currently empty), add `upstream` remote, create branch `herd-panel`.
+2. **Fork and clone.** Fork `TheBoredTeam/boring.notch` on GitHub, clone into `/Users/dev/playground/herdnotch` (currently empty), add `upstream` remote, create branch `herd-panel`.
    *Verify:* `git remote -v` lists both `origin` (your fork) and `upstream`.
 3. **Build and run the unmodified app.**
    *Verify:* `xcodebuild -project boringNotch.xcodeproj -scheme boringNotch build` succeeds, the app launches, the notch expands, Home and Shelf tabs both work.
@@ -197,23 +199,23 @@ v0 (Phases 0-3) is roughly **10 hours of work** plus the Xcode install.
 
 ---
 
-# Track A — `BoringHerdBar`, the menu bar app (no Xcode)
+# Track A — the menu bar app, since retired (no Xcode)
 
 Delivers features 1, 2, 3, 5, 6, 9, 13 immediately, and 4 in its status-item form. Everything here builds and runs with Command Line Tools only.
 
 ## Phase A1 — buildable app bundle skeleton
 
-`BoringHerdBar/` as a SwiftPM executable depending on the local `HerdKit` package. No asset catalog and no Metal, deliberately: `actool` and the Metal compiler are both unavailable, so every icon is an SF Symbol drawn in code and every colour is defined in Swift. This is a constraint that happens to produce less code, so it is not worth fighting.
+`HerdNotch/` as a SwiftPM executable depending on the local `HerdKit` package. No asset catalog and no Metal, deliberately: `actool` and the Metal compiler are both unavailable, so every icon is an SF Symbol drawn in code and every colour is defined in Swift. This is a constraint that happens to produce less code, so it is not worth fighting.
 
-`BoringHerdBar/build.sh` assembles a real `.app` by hand, because SwiftPM only produces a bare executable:
+`HerdNotch/build.sh` assembles a real `.app` by hand, because SwiftPM only produces a bare executable:
 
 1. `swift build -c release`
-2. create `BoringHerdBar.app/Contents/{MacOS,Resources}`
+2. create `HerdNotch.app/Contents/{MacOS,Resources}`
 3. write `Info.plist` with `LSUIElement = true` (no Dock icon, no menu bar title of its own), `CFBundleIdentifier`, `LSMinimumSystemVersion = 14.0`
 4. copy the binary in
 5. `codesign --force --sign - --options runtime` ad-hoc
 
-*Verify:* `./build.sh && open BoringHerdBar.app` puts an item in the menu bar and leaves no Dock icon.
+*Verify:* `./build.sh && open HerdNotch.app` puts an item in the menu bar and leaves no Dock icon.
 
 ## Phase A2 — status item and the panel
 
@@ -256,13 +258,13 @@ One review item was deliberately declined rather than implemented: response-id c
 - ~~**Model `done` as a first-class `AgentStatus`.**~~ **Done, 2026-08-03.** `AgentStatus.done` ranks after `blocked` in both the display order and the roll-up, `HerdUrgency` gains a matching case above the inferred `recentlyCompleted`, `StatusCounts` gains a `done` field with an explicit decoder so payloads written before the field existed still decode, and the transient popup's completion test now accepts any transition into `done` as well as `working -> idle`. It draws as a green checkmark, sharing the recency mark's shape and differing only in colour. Two notes for anyone re-checking it: the wire spelling was re-confirmed from the shipped binary's serde variant list, `idle working blocked done unknown`, because **`done` could not be reproduced live on the day it was implemented** (`agent.list` returned only `working` and `idle` across four sessions), so it is fixture-verified and the first real sighting is still the true acceptance test. If herdr ever spells it differently in a payload, the `unknown` fallback means nothing fails loudly, it simply reverts to the old behaviour.
 - ~~**Dynamic Type: sizes are fixed point values with no `@ScaledMetric`.**~~ **Closed as superseded, 2026-08-03**, not built. Three reasons, and the first is structural rather than a preference. The ledger is a measured table: its column widths come from CoreText at a specific point size and that measurement happens *before* layout, so the size must be a number this code holds, not a multiplier resolved inside a view body. The user asked to tune this by eye, which a system-wide setting cannot do per app. And macOS ships no Dynamic Type control comparable to iOS's, so the multiplier would resolve to 1.0 and the work would deliver nothing. The five-step `ledgerTextSize` control added in the settings window is what this follow-up was actually asking for, and it moves the whole scale together, row height and gutter and sigil diameters included. See `HerdLedgerScale` in `HerdLedgerColumns.swift`, which states the same argument at the point of the decision.
 - **herdr's own palette still disagrees with the panel's, and cannot be made to agree from here.** The panel draws red for blocked, amber for working, green for done, blue for idle. herdr draws a completed agent in blue, which is what prompted the recolour in the first place. herdr is a closed Mach-O binary, and its `[theme.custom]` config block exposes token *values* only (`panel_bg`, `surface0`, `surface1`, `surface_dim`, `overlay0`, `overlay1`, `text`, `subtext0`, `mauve`, `green`, `yellow`, `red`, `blue`, `teal`, `peach`), never the status-to-token mapping. So making herdr agree would mean globally redefining `blue` and `green`, repainting every other use of those tokens in its chrome. Deliberately not done. If uniformity matters, it is a request to herdr upstream, not a change available here.
-- **Notifications cannot be authorized for an ad-hoc signed bundle.** `UNUserNotificationCenter` returns `UNErrorDomain Code=1, "Notifications are not allowed for this application"`, so feature 11's banner path is exercised but can never appear in `BoringHerdBar`. The transient menu bar popup is currently the only working alert surface, which is why it matters more than originally scoped. A Developer ID signature fixes this; the fork will not have the problem because boringNotch is properly signed.
-- **SwiftPM caches the path-dependency file list.** Adding a file to `HerdKit` does not invalidate `BoringHerdBar/.build/release.yaml`, so the app silently compiles against the old file set until the stale build plan is deleted. Touching `Package.swift` is not enough. It fails as a compile error rather than silently producing wrong behaviour, but it costs time. Delete the build plan after adding any `HerdKit` source file.
+- **Notifications cannot be authorized for an ad-hoc signed bundle.** `UNUserNotificationCenter` returns `UNErrorDomain Code=1, "Notifications are not allowed for this application"`, so feature 11's banner path is exercised but can never appear in the retired menu bar app. The transient menu bar popup is currently the only working alert surface, which is why it matters more than originally scoped. A Developer ID signature fixes this; the fork will not have the problem because boringNotch is properly signed.
+- **SwiftPM caches the path-dependency file list.** Adding a file to `HerdKit` does not invalidate `HerdNotch/.build/release.yaml`, so the app silently compiles against the old file set until the stale build plan is deleted. Touching `Package.swift` is not enough. It fails as a compile error rather than silently producing wrong behaviour, but it costs time. Delete the build plan after adding any `HerdKit` source file.
 - **`HerdAgent.id` is `paneId`, which is session-scoped.** Fine today because the views nest agents under their session, but any future flat list across sessions would hit duplicate SwiftUI identities. The notification and popup paths already key on `(sessionName, paneId)`; a view that flattens must do the same.
 
 ## Second pass, 2026-07-31
 
-Four things changed in `BoringHerdBar` after living with it, plus one question answered.
+Four things changed in the retired menu bar app after living with it, plus one question answered.
 
 - **Keyboard focus.** The list used `@FocusState` per row, and SwiftUI assigned focus to the first row as soon as the popover became key, so the first Down press appeared to skip row one. Selection is now plain `@State` owned by the list, which nothing outside can pre-assign, with the scroll view as the single focusable element and a `ScrollViewReader` doing the scroll-to-selection that focus used to do for free. Verified by replaying synthetic key events into the popover and capturing: one Down selects row one, two selects row two, three crosses a workspace header without stopping on it.
 - **The rail is gone**, token and geometry both, and `DESIGN.md`'s signature-element section is rewritten around what replaces it: a derived three-level indentation ladder, and a status dot moved to sit immediately left of its label. The dot had to move; deleting the rail without closing that gap left the dot stranded in the margin, because the rail was what had been explaining the distance.
@@ -273,7 +275,7 @@ Four things changed in `BoringHerdBar` after living with it, plus one question a
 
 ## When Xcode arrives
 
-`HerdListView.swift` moves into `boringNotch/components/Notch/` and is wrapped by the fork's `HerdView`, which supplies the snapshot from `HerdManager` and the upstream styling context. `HerdKit` is added to the `BoringNotchXPCHelper` target. `BoringHerdBar` stays in the tree as the external-display surface (feature 13) rather than being deleted.
+`HerdListView.swift` moves into `boringNotch/components/Notch/` and is wrapped by the fork's `HerdView`, which supplies the snapshot from `HerdManager` and the upstream styling context. `HerdKit` is added to the `BoringNotchXPCHelper` target. the retired menu bar app stays in the tree as the external-display surface (feature 13) rather than being deleted.
 
 ## Third pass, 2026-07-31: dynamic columns, and why the cross-session raise did nothing
 
@@ -289,7 +291,7 @@ The AppleScript was never the problem, and neither was the marker. Both were che
 
 The fix is both halves: `build.sh` now signs the `com.apple.security.automation.apple-events` entitlement in and verifies it landed, and `HerdTerminalWindowLocator` asks for consent through `AEDeterminePermissionToAutomateTarget` **before** any timed script runs, so the user gets as long as they like to answer and a refusal comes back as a message naming the System Settings pane rather than as silence. The ask happens after the attachment probe, so clicking a row in a genuinely detached session still returns `notAttached` without ever prompting.
 
-**Why this was invisible in testing.** A build launched straight from a shell inherits the calling terminal's own Automation grant through TCC's responsible-process attribution, so the raise worked when the binary was run by hand and failed only when LaunchServices launched the bundle as its own responsible process, which is the only way a user ever launches it. Any future verification of this feature has to go through `open BoringHerdBar.app`, never through `./BoringHerdBar.app/Contents/MacOS/BoringHerdBar`.
+**Why this was invisible in testing.** A build launched straight from a shell inherits the calling terminal's own Automation grant through TCC's responsible-process attribution, so the raise worked when the binary was run by hand and failed only when LaunchServices launched the bundle as its own responsible process, which is the only way a user ever launches it. Any future verification of this feature has to go through `open HerdNotch.app`, never through `./HerdNotch.app/Contents/MacOS/HerdNotch`.
 
 Verified after the fix, all three through a real click in the popover with the shipped build: iTerm2 showing `default` and a `hail_mary` row clicked switches to `hail_mary`; the reverse switches back; and with Finder frontmost the same click brings iTerm2 forward *and* lands on the right tab. `oncall_20-23_07` still reports `notAttached` and attempts no raise.
 
@@ -297,7 +299,7 @@ Verified after the fix, all three through a real click in the popover with the s
 
 ### Column widths are measured rather than declared
 
-See **Type** in `DESIGN.md` for the reasoning and the numbers. The mechanical notes: measurement is `HerdLedgerColumns` in `HerdPanelUI`, it imports CoreText and still not AppKit, and there is now a `HerdPanelUITests` target in the `BoringHerdBar` package holding thirteen tests for it, run with the same framework search path flags `HerdKit` needs.
+See **Type** in `DESIGN.md` for the reasoning and the numbers. The mechanical notes: measurement is `HerdLedgerColumns` in `HerdPanelUI`, it imports CoreText and still not AppKit, and there is now a `HerdPanelUITests` target in the the retired menu bar app package holding thirteen tests for it, run with the same framework search path flags `HerdKit` needs.
 
 One trap for anyone editing that file: `NSAttributedString.Key.font` is declared by AppKit and UIKit, not by Foundation, so writing `[.font: …]` there compiles only for as long as some other file in the module imports AppKit transitively through SwiftUI. It did compile, which is the problem, since the portability rule the target exists to enforce would have been broken by an expression that never names AppKit. The measurement therefore builds its attributed string with `CFAttributedStringCreate` and `kCTFontAttributeName`.
 
@@ -309,7 +311,7 @@ Idle cost is unchanged in practice: 0.23 % of one core measured from `ps` over 1
 
 The shortcut was a hardcoded Carbon registration on `⌃⌥⌘H` with no interface and two documented `defaults write` keys. Three things changed.
 
-**It is now a value in its own target.** `BoringHerdBar/Sources/HerdShortcut/` holds `HerdShortcut` (key code, modifier mask, display name) and `HerdShortcutStore` (the `UserDefaults` round trip). A target rather than a nested type, and the reason is testability: SwiftPM cannot import an executable module whose entry point is top-level code in `main.swift`, so nothing inside `BoringHerdBar` can be unit-tested at all. It is not in `HerdKit` because it imports `Carbon.HIToolbox` and `HerdKit` is pure Foundation shared with the parked fork's XPC helper, and not in `HerdPanelUI` because that target is SwiftUI-and-HerdKit-only so it lifts into the fork verbatim.
+**It is now a value in its own target.** `HerdNotch/Sources/HerdShortcut/` holds `HerdShortcut` (key code, modifier mask, display name) and `HerdShortcutStore` (the `UserDefaults` round trip). A target rather than a nested type, and the reason is testability: SwiftPM cannot import an executable module whose entry point is top-level code in `main.swift`, so nothing inside the retired menu bar app can be unit-tested at all. It is not in `HerdKit` because it imports `Carbon.HIToolbox` and `HerdKit` is pure Foundation shared with the parked fork's XPC helper, and not in `HerdPanelUI` because that target is SwiftUI-and-HerdKit-only so it lifts into the fork verbatim.
 
 **The old encoding could not store the new default.** It treated `code > 0 && modifiers > 0` as "the user overrode it", which silently made `kVK_ANSI_A` unstorable (it is literally `0`) and every modifier-free binding unstorable too. Unset is now `-1`. That mattered immediately, because the shipped default is a bare function key with a zero modifier mask.
 
@@ -358,7 +360,7 @@ Also: a remote session's row does not raise a terminal, because every local term
 
 - **Rows reconcile.** With the filter cleared: `default` 8, `hail_mary` 6, `oncall_20-23_07` 2, so 16 local agents, and the panel printed 16, plus `shara_oncall_2-6_07` as `stopped` and both forwarded sessions. One trap for anyone re-running this: a bare `herdr agent list` from inside a herdr pane hits the *ambient* session via `HERDR_SESSION`, not `default`. It reported 6 for `default` and sent this check off for ten minutes. Use `herdr --session default agent list`.
 - **Idle CPU with the panel open**, from `ps` over 80 seconds: **0.300 %** of one core in the shipped configuration (four local sessions, remote scanning off, 1 Hz). With two forwarded remotes added, six sessions with one proxied through a Python relay, 1.05 % over 75 seconds. The concurrency change costs nothing measurable.
-- **Tests: 52 in `HerdKit`** (up from 45: five for remote discovery, two for remote failure behaviour including the timing one) **and 26 in the `BoringHerdBar` package** (15 `HerdPanelUITests`, up from 13 for the two marker-measurement tests, plus 11 new `HerdShortcutTests` for persistence, validity and display).
+- **Tests: 52 in `HerdKit`** (up from 45: five for remote discovery, two for remote failure behaviour including the timing one) **and 26 in the the retired menu bar app package** (15 `HerdPanelUITests`, up from 13 for the two marker-measurement tests, plus 11 new `HerdShortcutTests` for persistence, validity and display).
 
 ## Fifth pass, 2026-07-31: an `EINVAL` that was not the timeval, and a marker that was sizing the whole panel
 
@@ -402,4 +404,4 @@ The guarantee is structural rather than arithmetic: `HerdLedgerColumns.measuring
 - **Dark-mode captures at three steps, all four sessions present, none erroring:** 441 × 318.5 pt at 10.5, **564.5 × 410 pt at the 13.5 default**, 688 × 491.5 pt at 16.5. Down from 640 × 396 pt at the default before this pass: 75.5 pt narrower and 14 pt taller, the height being the marker line.
 - **Nothing scrolls at any step.** The body cap scales with the type (420 / 540 / 660 pt) against a body needing 294 / 381 / 460.5 pt, so the marker line is absorbed with room to spare at every step.
 - **Idle CPU with the panel open**, from `ps` over 75 seconds: **0.53 %** of one core, four local sessions, remote scanning off, 1 Hz. Same order as the 0.300 % recorded in the second pass; the herd was busier, and there is still no animation anywhere.
-- **Tests: 58 in `HerdKit`** (up from 52: three for the socket-option and deadline behaviour against a real one-shot server, three for the blast-radius policy) **and 36 in the `BoringHerdBar` package**, with the four tests that asserted the marker *was* paid for in the session column replaced by three asserting it is not, plus one pinning the guarantee at every step of the type scale.
+- **Tests: 58 in `HerdKit`** (up from 52: three for the socket-option and deadline behaviour against a real one-shot server, three for the blast-radius policy) **and 36 in the the retired menu bar app package**, with the four tests that asserted the marker *was* paid for in the session column replaced by three asserting it is not, plus one pinning the guarantee at every step of the type scale.

@@ -1,4 +1,4 @@
-# boring-herd — herdr sessions in the MacBook notch
+# HerdNotch — herdr sessions in the MacBook notch
 
 Feasibility verdict: **yes, feasible.** Everything below was verified on this machine (macOS 26.2, herdr 0.7.1, Swift 6.2.3) unless marked *unverified*.
 

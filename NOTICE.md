@@ -6,14 +6,14 @@ This project includes the following third-party code.
 
 - Source: https://github.com/robinebers/openusage
 - License: MIT, Copyright (c) 2026 Robin Ebers
-- Use: the usage logic in `BoringHerdBar/Sources/UsageKit` is adapted from OpenUsage.
+- Use: the usage logic in `HerdNotch/Sources/UsageKit` is adapted from OpenUsage.
 - License text: `ThirdPartyLicenses/OpenUsage-LICENSE`
 
 ## mediaremote-adapter
 
 - Source: https://github.com/ungive/mediaremote-adapter
 - License: BSD-3-Clause
-- Use: vendored, unmodified, at `BoringHerdBar/Vendor/mediaremote-adapter`. See its `VENDORED.md` for the version and commit, and its `LICENSE` for the license text.
+- Use: vendored, unmodified, at `HerdNotch/Vendor/mediaremote-adapter`. See its `VENDORED.md` for the version and commit, and its `LICENSE` for the license text.
 
 ## Vorssaint
 

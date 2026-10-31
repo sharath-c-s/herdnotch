@@ -2,7 +2,7 @@
 
 import PackageDescription
 
-/// HerdKit is the herdr data layer for boring-herd.
+/// HerdKit is the herdr data layer for HerdNotch.
 ///
 /// It is deliberately a standalone SwiftPM package with no SwiftUI, AppKit or XPC dependency: pure
 /// Foundation plus Darwin. That keeps it buildable and testable without Xcode, and lets both the
