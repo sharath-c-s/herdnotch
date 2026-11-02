@@ -257,6 +257,9 @@ final class NotchWindowController: NSObject {
     /// Battery health, cycles, watts and time remaining for the System page; event-driven.
     let powerInfoService = PowerInfoService()
 
+    /// CPU, memory and the resource diagnosis, sampled only while a System page is on screen.
+    let systemLoadService = SystemLoadService()
+
     /// Memory, disk and CPU samples, running only while an alert category is enabled.
     let systemAlertMonitor = SystemAlertMonitor()
 
@@ -290,6 +293,10 @@ final class NotchWindowController: NSObject {
 
     /// Per-display AppKit windows and SwiftUI plumbing, keyed by `CGDirectDisplayID`.
     private var displayPanels: [NotchDisplayID: DisplayPanel] = [:]
+
+    /// Re-evaluates ``updateHerdModelActivity()`` when a display's page changes while open, since a page
+    /// switch never reaches the reducer.
+    private var pageObservers: [NotchDisplayID: AnyCancellable] = [:]
 
     /// The dumb, faithful executor this controller hands every returned `NotchCommand` to.
     private lazy var executor = NotchCommandExecutor { [weak self] event in
@@ -702,6 +709,14 @@ final class NotchWindowController: NSObject {
         }
         herdModel.setActive(anyExpanded)
         liveActivity.isPanelOpen = anyExpanded
+        let systemPageOpen = displayPanels.contains { display, panel in
+            guard panel.viewModel.page == .system else { return false }
+            switch reducer.panels[display]?.presentation {
+            case .expanding, .expanded: return true
+            default: return false
+            }
+        }
+        systemLoadService.setActive(systemPageOpen)
         if anyExpanded {
             spotifyService.startPositionTicking()
             systemNowPlayingService.startPositionTicking()
@@ -1102,6 +1117,7 @@ final class NotchWindowController: NSObject {
             executor.teardownDisplay(display)
             displayPanels[display]?.panel.orderOut(nil)
             displayPanels.removeValue(forKey: display)
+            pageObservers.removeValue(forKey: display)
             collapsedScreenFrames.removeValue(forKey: display)
             screenFrames.removeValue(forKey: display)
             layouts.removeValue(forKey: display)
@@ -1116,6 +1132,10 @@ final class NotchWindowController: NSObject {
         viewModel.notchRect = notchRect(for: layout)
         viewModel.expandedSize = layout.expandedFrame.size
         collapsedScreenFrames[display] = layout.collapsedFrame
+        // `$page` emits in willSet, so hop to the next main turn to read the new value.
+        pageObservers[display] = viewModel.$page.dropFirst().removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.updateHerdModelActivity() } }
         let hostingView = NSHostingView(
             rootView: NotchContentView(
                 viewModel: viewModel,
@@ -1124,6 +1144,7 @@ final class NotchWindowController: NSObject {
                 keepAwakeService: keepAwakeService,
                 lidSleepController: lidSleepController,
                 powerInfoService: powerInfoService,
+                systemLoadService: systemLoadService,
                 usageService: usageService,
                 remindersService: remindersService,
                 spotifyService: spotifyService,

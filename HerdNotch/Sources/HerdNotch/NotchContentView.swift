@@ -62,6 +62,9 @@ struct NotchContentView: View {
     /// Battery health, watts and time remaining, for the System page and the battery ring's tooltip.
     @ObservedObject var powerInfoService: PowerInfoService
 
+    /// CPU, memory and diagnosis for the System page's power card.
+    let systemLoadService: SystemLoadService
+
     /// Plan usage snapshots for the Herd page usage card.
     @ObservedObject var usageService: UsageService
 
@@ -286,7 +289,7 @@ struct NotchContentView: View {
                 SystemPageView(
                     layout: systemLayout, palette: palette, now: now, power: powerInfoService,
                     battery: batteryService, keepAwake: keepAwakeService, caffeinate: caffeinateService,
-                    lid: lidSleepController
+                    lid: lidSleepController, load: systemLoadService
                 )
                 .opacity(heroReveal)
                 nowPlayingCard
