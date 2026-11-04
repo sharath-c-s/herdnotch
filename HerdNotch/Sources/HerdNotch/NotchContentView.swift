@@ -62,7 +62,7 @@ struct NotchContentView: View {
     /// Battery health, watts and time remaining, for the System page and the battery ring's tooltip.
     @ObservedObject var powerInfoService: PowerInfoService
 
-    /// CPU, memory and diagnosis for the System page's power card.
+    /// CPU and memory summary (System page) and the full health report (Health page).
     let systemLoadService: SystemLoadService
 
     /// Plan usage snapshots for the Herd page usage card.
@@ -220,6 +220,8 @@ struct NotchContentView: View {
 
     private var systemLayout: SystemLayout { SystemLayout(panel: viewModel.expandedSize) }
 
+    private var healthLayout: HealthLayout { HealthLayout(panel: viewModel.expandedSize) }
+
     var body: some View {
         Group {
             switch viewModel.presentation {
@@ -289,11 +291,17 @@ struct NotchContentView: View {
                 SystemPageView(
                     layout: systemLayout, palette: palette, now: now, power: powerInfoService,
                     battery: batteryService, keepAwake: keepAwakeService, caffeinate: caffeinateService,
-                    lid: lidSleepController, load: systemLoadService
+                    lid: lidSleepController, load: systemLoadService, onShowHealth: { viewModel.page = .health }
                 )
                 .opacity(heroReveal)
                 nowPlayingCard
                 remindersCard
+            } else if viewModel.page == .health {
+                HealthPageView(
+                    layout: healthLayout, palette: palette, load: systemLoadService, panes: searchPanes,
+                    onSelectAgent: onSelectAgent
+                )
+                .opacity(heroReveal)
             } else {
                 agentsHeroCard
                 UsagePageCard(frame: layout.usage, palette: palette, now: now, usage: usageService)
@@ -374,27 +382,25 @@ struct NotchContentView: View {
         .opacity(heroReveal)
     }
 
-    /// `● Herd  ○ System`: switches the expanded content between the two pages on click or a hover dwell.
+    /// `Herd  System  Health`, the current one in semibold: switches the expanded content between the three pages on click or a hover dwell.
     /// Plain buttons, no animation.
     private var pageSwitcher: some View {
         HStack(spacing: 2) {
             pageButton("Herd", page: .herd)
             pageButton("System", page: .system)
+            pageButton("Health", page: .health)
         }
     }
 
     private func pageButton(_ title: String, page: NotchPage) -> some View {
         let selected = viewModel.page == page
         return Button(action: { viewModel.page = page }) {
-            HStack(spacing: 4) {
-                Image(systemName: selected ? "circle.fill" : "circle")
-                    .font(.system(size: 6))
-                Text(title).font(.system(size: 11, weight: selected ? .semibold : .regular))
-            }
-            .foregroundStyle(selected ? palette.textPrimary : palette.textSecondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+            Text(title)
+                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? palette.textPrimary : palette.textSecondary)
+                .padding(.horizontal, 3)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .fixedSize()

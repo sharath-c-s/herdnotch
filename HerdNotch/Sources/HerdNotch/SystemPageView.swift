@@ -3,7 +3,7 @@ import NotchCore
 import NotchGeometry
 import SwiftUI
 
-/// The System page: power and keep-awake cards (now playing and reminders are drawn by `NotchContentView`) at their ``SystemLayout`` frames. The shelf is not drawn
+/// The System page: power (battery plus a one-line CPU and memory summary) and keep-awake cards (now playing and reminders are drawn by `NotchContentView`) at their ``SystemLayout`` frames. The shelf is not drawn
 /// here; `NotchContentView` keeps it on both pages. No animation anywhere on this page.
 struct SystemPageView: View {
     let layout: SystemLayout
@@ -16,6 +16,7 @@ struct SystemPageView: View {
     @ObservedObject var caffeinate: CaffeinateService
     @ObservedObject var lid: LidSleepController
     @ObservedObject var load: SystemLoadService
+    let onShowHealth: () -> Void
     @ObservedObject private var preferences = NotchPreferences.shared
     /// The last `lid.install()` failure or cancellation, shown under the Lid closed row; `nil` after success.
     @State private var lidSetupMessage: String?
@@ -71,70 +72,30 @@ struct SystemPageView: View {
             } else {
                 line("No battery")
             }
-            loadContent
+            loadSummary
         }
     }
 
-    // MARK: - CPU, memory and diagnosis
+    // MARK: - CPU and memory summary
 
-    @ViewBuilder private var loadContent: some View {
-        if let cpu = load.cpuPercent {
-            meter("CPU \(LoadFormat.percent(cpu))", fraction: cpu / 100, stressed: cpu >= ResourceDiagnosis.cpuThreshold)
-        }
-        if let memory = load.memory {
-            meter(
-                "Memory \(LoadFormat.memory(used: memory.usedBytes, total: memory.totalBytes))",
-                fraction: memory.usedFraction, stressed: memory.pressure != .normal)
-            if memory.swapUsedBytes > 0 { line("swap \(LoadFormat.bytes(memory.swapUsedBytes))") }
-        }
-        if let diagnosis = load.diagnosis { diagnosisContent(diagnosis) }
-    }
-
-    private func meter(_ text: String, fraction: Double, stressed: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            line(text)
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.10))
-                    Capsule().fill(stressed ? palette.blocked : palette.working)
-                        .frame(width: proxy.size.width * min(1, max(0, fraction)))
+    /// One line that opens the Health page; blank until the first sample lands.
+    @ViewBuilder private var loadSummary: some View {
+        if let cpu = load.cpuPercent, let memory = load.memory {
+            Button(action: onShowHealth) {
+                HStack(spacing: 6) {
+                    Text("CPU \(LoadFormat.percent(cpu)) · Memory \(LoadFormat.memory(used: memory.usedBytes, total: memory.totalBytes))")
+                        .foregroundStyle(
+                            cpu >= ResourceDiagnosis.cpuThreshold || memory.pressure != .normal
+                                ? palette.blocked : palette.textSecondary)
+                    Text("Health ›").foregroundStyle(palette.textPrimary)
                 }
+                .font(.system(size: 13))
+                .lineLimit(1)
+                .contentShape(Rectangle())
             }
-            .frame(height: 3)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Show Health page")
         }
-    }
-
-    private func diagnosisContent(_ diagnosis: Diagnosis) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(LoadFormat.reason(diagnosis.reason))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(palette.blocked)
-            if !diagnosis.topCPU.isEmpty { header("TOP CPU") }
-            ForEach(diagnosis.topCPU, id: \.pid) { process in
-                usageRow(process.name, LoadFormat.percent(process.cpuPercent), LoadFormat.bytes(process.residentBytes))
-            }
-            if !diagnosis.topMemory.isEmpty { header("TOP MEMORY") }
-            ForEach(diagnosis.topMemory, id: \.pid) { process in
-                usageRow(process.name, LoadFormat.percent(process.cpuPercent), LoadFormat.bytes(process.residentBytes))
-            }
-            if !diagnosis.swarms.isEmpty { header("SWARMS") }
-            ForEach(diagnosis.swarms, id: \.family) { swarm in
-                usageRow(LoadFormat.swarmTitle(swarm), LoadFormat.percent(swarm.cpuPercent), LoadFormat.bytes(swarm.residentBytes))
-            }
-        }
-        .padding(.top, 4)
-    }
-
-    private func usageRow(_ name: String, _ cpu: String, _ memory: String) -> some View {
-        HStack(spacing: 8) {
-            Text(name).lineLimit(1).truncationMode(.tail)
-            Spacer(minLength: 4)
-            Text(cpu)
-            Text(memory)
-        }
-        .font(.system(size: 12))
-        .monospacedDigit()
-        .foregroundStyle(palette.textSecondary)
     }
 
     private func powerDetail(_ snapshot: PowerInfoService.Snapshot) -> String {

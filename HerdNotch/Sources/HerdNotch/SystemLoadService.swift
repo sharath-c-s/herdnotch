@@ -3,46 +3,66 @@ import Foundation
 import HerdKit
 import NotchCore
 
-/// CPU, memory and, when the Mac struggles, a plain resource diagnosis for the System page.
+/// How much the load sampler measures: nothing, the cheap CPU + memory summary (System page), or the full
+/// Health scan (process table, thermal, disk, load average).
+enum SystemLoadMode: Equatable {
+    case off, summary, full
+}
+
+/// CPU and memory for the System page's summary line, plus the full ``HealthReport`` for the Health page.
 ///
-/// Runs only while some display is expanded on the System page (`NotchWindowController` calls
-/// ``setActive(_:)`` on every presentation and page change), so a closed panel costs nothing. All sampling
-/// happens on a private serial queue; the main actor only receives small value results.
+/// Runs only while some display is expanded on the System (summary) or Health (full) page;
+/// `NotchWindowController` calls ``setMode(_:)`` on every presentation and page change, so a closed panel
+/// costs nothing. All sampling happens on a private serial queue; the main actor only receives small value
+/// results and republishes only what changed.
 @MainActor
 final class SystemLoadService: ObservableObject {
     @Published private(set) var cpuPercent: Double?
     @Published private(set) var memory: MemoryReading?
-    @Published private(set) var diagnosis: Diagnosis?
+    /// Full mode only: every reading, available from the first tick.
+    @Published private(set) var readings: HealthReadings?
+    /// Full mode only: `nil` until a second process scan gives CPU deltas (about 2 s after the page opens).
+    @Published private(set) var report: HealthReport?
 
+    private var mode = SystemLoadMode.off
     private var timer: DispatchSourceTimer?
     private var sampler: Sampler?
+    private let externalAgents = LockedBox<[Int32: AgentIdentity]>([:])
 
-    /// Idempotent: starts the timer when `active` turns on, cancels it and clears the readings when it turns off.
-    func setActive(_ active: Bool) {
-        if active {
-            guard timer == nil else { return }
-            let sampler = Sampler()
-            self.sampler = sampler
-            let timer = DispatchSource.makeTimerSource(queue: sampler.queue)
-            // First fire early so the page fills quickly; the baseline ticks are read when the sampler is made.
-            timer.schedule(deadline: .now() + 0.5, repeating: 2.0, leeway: .milliseconds(100))
-            timer.setEventHandler { [weak self] in
-                let result = sampler.tick()
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { self?.apply(result, from: sampler) }
-                }
-            }
-            self.timer = timer
-            timer.resume()
-        } else {
-            guard let timer else { return }
-            timer.cancel()
-            self.timer = nil
-            sampler = nil
+    /// Idempotent: a changed mode stops the old sampler and starts the new one; `.off` clears every reading.
+    func setMode(_ newMode: SystemLoadMode) {
+        guard newMode != mode else { return }
+        mode = newMode
+        timer?.cancel()
+        timer = nil
+        sampler = nil
+        if newMode == .off || newMode == .summary {
+            readings = nil
+            report = nil
+        }
+        guard newMode != .off else {
             cpuPercent = nil
             memory = nil
-            diagnosis = nil
+            return
         }
+        let sampler = Sampler(full: newMode == .full, externalAgents: externalAgents)
+        self.sampler = sampler
+        let timer = DispatchSource.makeTimerSource(queue: sampler.queue)
+        // First fire early so the page fills quickly; the baseline ticks are read when the sampler is made.
+        timer.schedule(deadline: .now() + 0.5, repeating: 2.0, leeway: .milliseconds(100))
+        timer.setEventHandler { [weak self] in
+            let result = sampler.tick()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.apply(result, from: sampler) }
+            }
+        }
+        self.timer = timer
+        timer.resume()
+    }
+
+    /// Pid to agent name for agents the Claude session registry does not know (Codex), from the herd snapshot.
+    func setExternalAgents(_ agents: [Int32: AgentIdentity]) {
+        externalAgents.value = agents
     }
 
     /// Drops a result that was already in flight when the sampler was stopped or replaced.
@@ -50,7 +70,20 @@ final class SystemLoadService: ObservableObject {
         guard sampler === source else { return }
         if cpuPercent != result.cpuPercent { cpuPercent = result.cpuPercent }
         if memory != result.memory { memory = result.memory }
-        if diagnosis != result.diagnosis { diagnosis = result.diagnosis }
+        if readings != result.readings { readings = result.readings }
+        if report != result.report { report = result.report }
+    }
+}
+
+final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+
+    init(_ value: Value) { stored = value }
+
+    var value: Value {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
     }
 }
 
@@ -59,25 +92,60 @@ private final class Sampler: @unchecked Sendable {
     struct Result: Sendable {
         var cpuPercent: Double
         var memory: MemoryReading
-        var diagnosis: Diagnosis?
+        var readings: HealthReadings?
+        var report: HealthReport?
     }
 
     let queue = DispatchQueue(label: "HerdNotch.SystemLoad", qos: .utility)
 
+    private let full: Bool
+    private let externalAgents: LockedBox<[Int32: AgentIdentity]>
     private var previousTicks: CPUTicks?
     private var swapHistory = SwapHistory()
-    private var hold = DiagnosisHold()
     private var previousProcesses: [Int32: ProcessSample]?
     private var previousScan: UInt64 = 0
     private let inspector = DarwinProcessInspector()
+    private let registry = ClaudeSessionRegistry()
     private let timebase: mach_timebase_info_data_t = {
         var info = mach_timebase_info_data_t()
         mach_timebase_info(&info)
         return info
     }()
 
-    init() {
+    private var thermal = ProcessInfo.processInfo.thermalState
+    private var thermalObserver: NSObjectProtocol?
+    private var speedLimit: Int?
+    private var lastPmset: UInt64 = 0
+    private var diskUsedPercent: Double?
+    private var lastDisk: UInt64 = 0
+    private var registryAgents: [Int32: AgentIdentity] = [:]
+    private var lastRegistry: UInt64 = 0
+    private var psEntries: [PsEntry] = []
+    private var lastPs: UInt64 = 0
+
+    /// Process-wide, so a fresh sampler (fast Health and System switching) cannot start a second probe while one runs.
+    private static let pmsetInFlight = InFlightFlag()
+    private static let psInFlight = InFlightFlag()
+    private static let pmsetEveryNs: UInt64 = 10 * 1_000_000_000
+    private static let psEveryNs: UInt64 = 4 * 1_000_000_000
+    private static let diskEveryNs: UInt64 = 30 * 1_000_000_000
+
+    init(full: Bool, externalAgents: LockedBox<[Int32: AgentIdentity]>) {
+        self.full = full
+        self.externalAgents = externalAgents
         previousTicks = Self.readTicks()
+        if full {
+            thermalObserver = NotificationCenter.default.addObserver(
+                forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: nil
+            ) { [weak self] _ in
+                guard let self else { return }
+                queue.async { self.thermal = ProcessInfo.processInfo.thermalState }
+            }
+        }
+    }
+
+    deinit {
+        if let thermalObserver { NotificationCenter.default.removeObserver(thermalObserver) }
     }
 
     func tick() -> Result {
@@ -86,34 +154,100 @@ private final class Sampler: @unchecked Sendable {
         if let previousTicks, let ticks { cpu = CPUTicks.cpuPercent(from: previousTicks, to: ticks) }
         previousTicks = ticks ?? previousTicks
         let memory = Self.readMemory()
+        guard full else { return Result(cpuPercent: cpu, memory: memory) }
+
         let start = DispatchTime.now().uptimeNanoseconds
         let baseline = swapHistory.baseline(recording: memory.swapUsedBytes, now: start)
+        refreshSlowReadings(now: start)
+        var load = [Double](repeating: 0, count: 1)
+        if getloadavg(&load, 1) < 1 { load[0] = 0 }
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        let readings = HealthReadings(
+            cpuPercent: cpu, loadAverage: load[0], cores: cores, memory: memory,
+            swapGrowing: ResourceDiagnosis.isSwapGrowing(swap: memory.swapUsedBytes, baseline: baseline),
+            diskUsedPercent: diskUsedPercent, thermal: Self.level(thermal), cpuSpeedLimit: speedLimit,
+            lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled)
 
-        let fresh = ResourceDiagnosis.trigger(cpuPercent: cpu, memory: memory, swapBaseline: baseline)
-        // While a diagnosis is held, keep scanning so its lists stay current and a re-trigger has a baseline.
-        guard let reason = fresh ?? hold.current?.reason else {
-            previousProcesses = nil
-            _ = hold.update(nil, now: start)
-            return Result(cpuPercent: cpu, memory: memory, diagnosis: nil)
-        }
-        // ponytail: with no earlier scan this blocks the sampler queue 1 s for a CPU baseline; keep a cheap rolling scan if that lag matters.
-        if previousProcesses == nil {
-            previousProcesses = scan()
-            previousScan = DispatchTime.now().uptimeNanoseconds
-            Thread.sleep(forTimeInterval: 1)
-        }
-        let current = scan()
+        let (current, scannedTable) = scan()
+        var table = scannedTable
+        let scanned = Set(current.keys)
         let now = DispatchTime.now().uptimeNanoseconds
+        defer {
+            previousProcesses = current
+            previousScan = now
+        }
+        // The first scan has no earlier one to difference against; readings show now, the report follows.
+        guard let previous = previousProcesses else { return Result(cpuPercent: cpu, memory: memory, readings: readings) }
         let interval = Double(now &- previousScan) / 1_000_000_000
-        let usage = ResourceDiagnosis.processCPU(
-            previous: previousProcesses ?? [:], current: Array(current.values), interval: interval)
-        previousProcesses = current
-        previousScan = now
-        let diagnosis = ResourceDiagnosis.diagnose(
-            reason: reason, cpuPercent: cpu, memory: memory, processes: usage,
-            cores: ProcessInfo.processInfo.activeProcessorCount)
-        let shown = hold.update(fresh == nil ? nil : diagnosis, now: now)
-        return Result(cpuPercent: cpu, memory: memory, diagnosis: shown == nil ? nil : diagnosis)
+        var usage = ResourceDiagnosis.processCPU(previous: previous, current: Array(current.values), interval: interval)
+        let unreadable = PsTable.usages(psEntries, excluding: scanned, currentUid: getuid(), selfPid: getpid())
+        usage += unreadable
+        for process in unreadable { table[process.pid] = ProcessNode(parentPid: process.parentPid, name: process.name) }
+        let report = HealthReport.build(
+            readings: readings, processes: usage, table: table, agents: agents(), selfPid: getpid())
+        return Result(cpuPercent: cpu, memory: memory, readings: readings, report: report)
+    }
+
+    // MARK: - Slow readings
+
+    private func refreshSlowReadings(now: UInt64) {
+        if now &- lastPmset >= Self.pmsetEveryNs, Self.pmsetInFlight.begin() {
+            lastPmset = now
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let output = try? BlockingProcess.run("/usr/bin/pmset", ["-g", "therm"], timeout: 2)
+                let limit = output?.succeeded == true ? output.flatMap { PmsetTherm.cpuSpeedLimit($0.stdout) } : nil
+                Self.pmsetInFlight.end()
+                guard let self else { return }
+                queue.async { self.speedLimit = limit }
+            }
+        }
+        if now &- lastPs >= Self.psEveryNs, Self.psInFlight.begin() {
+            lastPs = now
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let output = try? BlockingProcess.run("/bin/ps", PsTable.arguments, timeout: 2)
+                let entries = output?.succeeded == true ? output.map { PsTable.parse($0.stdout) } : nil
+                Self.psInFlight.end()
+                guard let self else { return }
+                queue.async { if let entries { self.psEntries = entries } }
+            }
+        }
+        if now &- lastDisk >= Self.diskEveryNs || diskUsedPercent == nil {
+            lastDisk = now
+            diskUsedPercent = Self.readDiskUsedPercent()
+        }
+        if now &- lastRegistry >= Self.pmsetEveryNs || lastRegistry == 0 {
+            lastRegistry = now
+            registryAgents = Dictionary(
+                registry.liveEntries().map { entry in
+                    let label = entry.name.isEmpty ? (entry.cwd as NSString).lastPathComponent : entry.name
+                    return (entry.pid, AgentIdentity(label: label, sessionId: entry.sessionId, registryStatus: entry.status))
+                }, uniquingKeysWith: { first, _ in first })
+        }
+    }
+
+    private func agents() -> [Int32: AgentIdentity] {
+        registryAgents.merging(externalAgents.value) { registry, _ in registry }
+    }
+
+    private static func level(_ state: ProcessInfo.ThermalState) -> ThermalLevel {
+        switch state {
+        case .nominal: .nominal
+        case .fair: .fair
+        case .serious: .serious
+        case .critical: .critical
+        @unknown default: .nominal
+        }
+    }
+
+    /// Plain free space (`volumeAvailableCapacityKey`), not the "important usage" key: that one makes macOS
+    /// compute purgeable space across every cache-delete service and costs real CPU.
+    /// Purgeable space is therefore not counted as free, so the Disk row can read fuller than Finder does.
+    private static func readDiskUsedPercent() -> Double? {
+        let keys: Set<URLResourceKey> = [.volumeAvailableCapacityKey, .volumeTotalCapacityKey]
+        guard let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: keys),
+            let available = values.volumeAvailableCapacity, let total = values.volumeTotalCapacity, total > 0
+        else { return nil }
+        return min(100, max(0, 100 - Double(available) / Double(total) * 100))
     }
 
     // MARK: - Cheap readings
@@ -163,9 +297,20 @@ private final class Sampler: @unchecked Sendable {
 
     // MARK: - Process scan
 
-    /// Same-user processes only: `proc_pidinfo` refuses root-owned ones without privileges.
-    private func scan() -> [Int32: ProcessSample] {
+    private static func footprint(of pid: Int32) -> UInt64? {
+        var usage = rusage_info_v4()
+        let status = withUnsafeMutablePointer(to: &usage) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) }
+        }
+        return status == 0 ? usage.ri_phys_footprint : nil
+    }
+
+    /// Same-user processes only: `proc_pidinfo` refuses root-owned ones without privileges (`ps` covers those).
+    /// Memory is the physical footprint (Activity Monitor's Memory column), which counts compressed and swapped
+    /// pages that `pti_resident_size` leaves out.
+    private func scan() -> (samples: [Int32: ProcessSample], table: [Int32: ProcessNode]) {
         var samples: [Int32: ProcessSample] = [:]
+        var table: [Int32: ProcessNode] = [:]
         for pid in inspector.allPids() {
             var info = proc_taskinfo()
             let size = Int32(MemoryLayout<proc_taskinfo>.size)
@@ -178,10 +323,32 @@ private final class Sampler: @unchecked Sendable {
             // Task times are mach absolute ticks, not nanoseconds, on Apple Silicon.
             let ticks = info.pti_total_user &+ info.pti_total_system
             let ns = ticks &* UInt64(timebase.numer) / UInt64(max(timebase.denom, 1))
+            let parent = inspector.parentPid(of: pid) ?? 0
             samples[pid] = ProcessSample(
                 pid: pid, name: name, family: ResourceDiagnosis.family(name: name, argv: argv),
-                cpuTimeNs: ns, residentBytes: info.pti_resident_size)
+                cpuTimeNs: ns, residentBytes: Self.footprint(of: pid) ?? info.pti_resident_size, parentPid: parent)
+            table[pid] = ProcessNode(parentPid: parent, name: name, argv: argv)
         }
-        return samples
+        return (samples, table)
+    }
+}
+
+/// A lock-protected "one at a time" flag shared across sampler instances.
+private final class InFlightFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var running = false
+
+    func begin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if running { return false }
+        running = true
+        return true
+    }
+
+    func end() {
+        lock.lock()
+        running = false
+        lock.unlock()
     }
 }

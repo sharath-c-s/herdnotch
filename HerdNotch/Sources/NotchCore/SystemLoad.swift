@@ -69,13 +69,18 @@ public struct ProcessSample: Equatable, Sendable {
     public var family: String
     public var cpuTimeNs: UInt64
     public var residentBytes: UInt64
+    /// 0 when unknown; only the Health page's agent attribution reads it.
+    public var parentPid: Int32
 
-    public init(pid: Int32, name: String, family: String, cpuTimeNs: UInt64, residentBytes: UInt64) {
+    public init(
+        pid: Int32, name: String, family: String, cpuTimeNs: UInt64, residentBytes: UInt64, parentPid: Int32 = 0
+    ) {
         self.pid = pid
         self.name = name
         self.family = family
         self.cpuTimeNs = cpuTimeNs
         self.residentBytes = residentBytes
+        self.parentPid = parentPid
     }
 }
 
@@ -86,13 +91,21 @@ public struct ProcessUsage: Equatable, Sendable {
     public var family: String
     public var cpuPercent: Double
     public var residentBytes: UInt64
+    public var parentPid: Int32
+    /// Owned by root or another user: HerdNotch can show it but the user cannot quit it from here.
+    public var isSystem: Bool
 
-    public init(pid: Int32, name: String, family: String, cpuPercent: Double, residentBytes: UInt64) {
+    public init(
+        pid: Int32, name: String, family: String, cpuPercent: Double, residentBytes: UInt64, parentPid: Int32 = 0,
+        isSystem: Bool = false
+    ) {
         self.pid = pid
         self.name = name
         self.family = family
         self.cpuPercent = cpuPercent
         self.residentBytes = residentBytes
+        self.parentPid = parentPid
+        self.isSystem = isSystem
     }
 }
 
@@ -104,17 +117,6 @@ public struct Swarm: Equatable, Sendable {
     public var residentBytes: UInt64
 }
 
-public enum DiagnosisReason: Equatable, Sendable {
-    case highCPU, swapping, memoryPressure
-}
-
-public struct Diagnosis: Equatable, Sendable {
-    public var reason: DiagnosisReason
-    public var topCPU: [ProcessUsage]
-    public var topMemory: [ProcessUsage]
-    public var swarms: [Swarm]
-}
-
 public enum ResourceDiagnosis {
     public static let cpuThreshold = 90.0
     public static let swapGrowthBytes: UInt64 = 64 * 1024 * 1024
@@ -123,9 +125,8 @@ public enum ResourceDiagnosis {
     public static let swarmMinBytes: UInt64 = 1024 * 1024 * 1024
     public static let listLimit = 3
     public static let swapWindowNs: UInt64 = 30 * 1_000_000_000
-    public static let holdNs: UInt64 = 10 * 1_000_000_000
     public static let mcpFamily = "MCP processes"
-    public static let residualName = "System and other users"
+    public static let residualName = "Kernel and wired"
     public static let residualPid: Int32 = -1
 
     /// Executable names whose argv is worth reading, because the real program is the first script argument.
@@ -153,34 +154,20 @@ public enum ResourceDiagnosis {
             }
             return ProcessUsage(
                 pid: sample.pid, name: sample.name, family: sample.family,
-                cpuPercent: percent, residentBytes: sample.residentBytes)
+                cpuPercent: percent, residentBytes: sample.residentBytes, parentPid: sample.parentPid)
         }
     }
 
-    /// Why the machine is struggling, or `nil` when it is not. Cheap, so the sampler calls it before scanning processes.
-    /// `swapBaseline` is the lowest swap reading of the last ``swapWindowNs`` (see ``SwapHistory``).
-    /// When several triggers hold, the order is CPU, then swapping, then memory pressure.
-    public static func trigger(cpuPercent: Double, memory: MemoryReading, swapBaseline: UInt64?) -> DiagnosisReason? {
-        if cpuPercent >= cpuThreshold { return .highCPU }
-        if let swapBaseline, memory.swapUsedBytes > swapBaseline, memory.swapUsedBytes - swapBaseline > swapGrowthBytes {
-            return .swapping
-        }
-        if memory.pressure >= .warn { return .memoryPressure }
-        return nil
+    /// Swap is more than ``swapGrowthBytes`` above the window's lowest reading.
+    public static func isSwapGrowing(swap: UInt64, baseline: UInt64?) -> Bool {
+        guard let baseline, swap > baseline else { return false }
+        return swap - baseline > swapGrowthBytes
     }
 
-    public static func evaluate(
-        cpuPercent: Double, memory: MemoryReading, swapBaseline: UInt64?, processes: [ProcessUsage], cores: Int = 1
-    ) -> Diagnosis? {
-        guard let reason = trigger(cpuPercent: cpuPercent, memory: memory, swapBaseline: swapBaseline) else { return nil }
-        return diagnose(reason: reason, cpuPercent: cpuPercent, memory: memory, processes: processes, cores: cores)
-    }
-
-    /// Builds the lists for a known reason. The scan sees only same-user processes, so a residual row
-    /// ("System and other users": machine total minus the visible sum, clamped at 0) joins the rankings.
-    public static func diagnose(
-        reason: DiagnosisReason, cpuPercent: Double, memory: MemoryReading, processes: [ProcessUsage], cores: Int
-    ) -> Diagnosis {
+    /// Every process plus the residual row (the machine total minus what the scan and `ps` see, clamped at 0), sorted by CPU and by memory (ties by name, then pid).
+    public static func rankings(
+        cpuPercent: Double, memory: MemoryReading, processes: [ProcessUsage], cores: Int
+    ) -> (byCPU: [ProcessUsage], byMemory: [ProcessUsage]) {
         let visibleCPU = processes.reduce(0.0) { $0 + $1.cpuPercent }
         let visibleBytes = processes.reduce(UInt64(0)) { $0 &+ $1.residentBytes }
         let residual = ProcessUsage(
@@ -196,11 +183,7 @@ public enum ResourceDiagnosis {
             if $0.residentBytes != $1.residentBytes { return $0.residentBytes > $1.residentBytes }
             return ($0.name, $0.pid) < ($1.name, $1.pid)
         }
-        return Diagnosis(
-            reason: reason,
-            topCPU: Array(byCPU.prefix(listLimit)),
-            topMemory: Array(byMemory.prefix(listLimit)),
-            swarms: swarms(in: processes))
+        return (byCPU, byMemory)
     }
 
     static func swarms(in processes: [ProcessUsage]) -> [Swarm] {
@@ -238,25 +221,6 @@ public struct SwapHistory: Sendable {
     }
 }
 
-/// Keeps the last diagnosis on screen for 10 s after its last trigger, so a brief dip does not blink it away.
-public struct DiagnosisHold: Sendable {
-    public private(set) var current: Diagnosis?
-    private var lastTrigger: UInt64 = 0
-
-    public init() {}
-
-    /// A fresh diagnosis replaces the held one at once; `nil` keeps it until 10 s (inclusive) after its trigger.
-    public mutating func update(_ fresh: Diagnosis?, now: UInt64) -> Diagnosis? {
-        if let fresh {
-            current = fresh
-            lastTrigger = now
-        } else if current != nil, now &- lastTrigger > ResourceDiagnosis.holdNs {
-            current = nil
-        }
-        return current
-    }
-}
-
 /// Display formatting for the System page's load lines. Pure value-in, string-out.
 public enum LoadFormat {
     private static let gib = Double(1024 * 1024 * 1024)
@@ -276,14 +240,6 @@ public enum LoadFormat {
     /// "18.2 of 36 GB": one decimal, dropped when it is zero.
     public static func memory(used: UInt64, total: UInt64) -> String {
         "\(gigabytes(Double(used))) of \(gigabytes(Double(total))) GB"
-    }
-
-    public static func reason(_ reason: DiagnosisReason) -> String {
-        switch reason {
-        case .highCPU: "CPU above 90%"
-        case .swapping: "Memory is swapping"
-        case .memoryPressure: "Memory pressure high"
-        }
     }
 
     /// "34 MCP processes", or "7 node" for any other family.

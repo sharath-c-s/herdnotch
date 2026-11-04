@@ -24,7 +24,7 @@ import UsageKit
 /// has named yet.
 /// Which page the expanded panel shows. Pure view state: never reaches the reducer, and resets to `.herd` on collapse.
 enum NotchPage: Equatable {
-    case herd, system
+    case herd, system, health
 }
 
 @MainActor
@@ -257,7 +257,7 @@ final class NotchWindowController: NSObject {
     /// Battery health, cycles, watts and time remaining for the System page; event-driven.
     let powerInfoService = PowerInfoService()
 
-    /// CPU, memory and the resource diagnosis, sampled only while a System page is on screen.
+    /// CPU and memory (System page) or the full health scan (Health page), sampled only while that page is on screen.
     let systemLoadService = SystemLoadService()
 
     /// Memory, disk and CPU samples, running only while an alert category is enabled.
@@ -709,14 +709,20 @@ final class NotchWindowController: NSObject {
         }
         herdModel.setActive(anyExpanded)
         liveActivity.isPanelOpen = anyExpanded
-        let systemPageOpen = displayPanels.contains { display, panel in
-            guard panel.viewModel.page == .system else { return false }
+        // Full beats summary when two displays are expanded on different pages.
+        var loadMode = SystemLoadMode.off
+        for (display, panel) in displayPanels {
             switch reducer.panels[display]?.presentation {
-            case .expanding, .expanded: return true
-            default: return false
+            case .expanding, .expanded:
+                switch panel.viewModel.page {
+                case .health: loadMode = .full
+                case .system: if loadMode == .off { loadMode = .summary }
+                case .herd: break
+                }
+            default: break
             }
         }
-        systemLoadService.setActive(systemPageOpen)
+        systemLoadService.setMode(loadMode)
         if anyExpanded {
             spotifyService.startPositionTicking()
             systemNowPlayingService.startPositionTicking()

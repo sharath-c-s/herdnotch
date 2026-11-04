@@ -95,6 +95,7 @@ final class SystemAlertMonitor: ObservableObject {
 
     /// Plain free space, not the "important usage" figure: that one makes every macOS cache-delete service
     /// compute its purgeable space on each call, which flooded HerdNotch's log with cache_delete work.
+    /// Purgeable space is not counted as free, so the alert can fire earlier than Finder's free figure suggests.
     nonisolated private static func diskFreePercent() -> Double? {
         let keys: Set<URLResourceKey> = [.volumeAvailableCapacityKey, .volumeTotalCapacityKey]
         guard let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: keys),
