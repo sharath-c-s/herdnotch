@@ -93,10 +93,12 @@ final class SystemAlertMonitor: ObservableObject {
         return Int(level)
     }
 
+    /// Plain free space, not the "important usage" figure: that one makes every macOS cache-delete service
+    /// compute its purgeable space on each call, which flooded HerdNotch's log with cache_delete work.
     nonisolated private static func diskFreePercent() -> Double? {
-        let keys: Set<URLResourceKey> = [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]
+        let keys: Set<URLResourceKey> = [.volumeAvailableCapacityKey, .volumeTotalCapacityKey]
         guard let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: keys),
-            let free = values.volumeAvailableCapacityForImportantUsage,
+            let free = values.volumeAvailableCapacity,
             let total = values.volumeTotalCapacity, total > 0
         else { return nil }
         return Double(free) / Double(total) * 100
