@@ -121,6 +121,11 @@ public struct HerdAgent: Codable, Sendable, Identifiable, Hashable {
     public let terminalId: String?
     /// herdr's `agent_session` object. A malformed value decodes to an empty ref rather than throwing.
     private let agentSession: AgentSessionRef?
+    /// The pane's raw terminal title, including claude's status glyph.
+    public let terminalTitle: String?
+    /// ``terminalTitle`` without the status glyph. For claude this is the live session name, and it is the
+    /// only name for sessions whose registry lives under another `CLAUDE_CONFIG_DIR`.
+    public let terminalTitleStripped: String?
 
     private struct AgentSessionRef: Codable, Hashable, Sendable {
         let value: String?
@@ -187,6 +192,8 @@ public struct HerdAgent: Codable, Sendable, Identifiable, Hashable {
         terminalId: String? = nil,
         agentSessionID: String? = nil,
         agentSessionSource: String? = nil,
+        terminalTitle: String? = nil,
+        terminalTitleStripped: String? = nil,
         tabLabel: String? = nil,
         claudeSessionName: String? = nil,
         claudeSessionNameSource: String? = nil,
@@ -210,18 +217,32 @@ public struct HerdAgent: Codable, Sendable, Identifiable, Hashable {
         self.terminalId = terminalId
         self.agentSession = (agentSessionID == nil && agentSessionSource == nil)
             ? nil : AgentSessionRef(value: agentSessionID, source: agentSessionSource)
+        self.terminalTitle = terminalTitle
+        self.terminalTitleStripped = terminalTitleStripped
         self.tabLabel = tabLabel
         self.claudeSessionName = claudeSessionName
         self.claudeSessionNameSource = claudeSessionNameSource
     }
 
-    /// The name shown and searched for this agent: a user-set session name, Claude's auto title, the tab
-    /// label, any other session name (derived), then the cwd basename. Empty strings are skipped.
+    /// The name shown and searched for this agent: a user-set session name, Claude's auto title, claude's
+    /// terminal title, the tab label, any other session name (derived), then the cwd basename. Empty strings
+    /// and herdr's default all-digit tab labels are skipped.
     public var displayName: String {
         let session = claudeSessionName.flatMap { $0.isEmpty ? nil : $0 }
-        let tab = tabLabel.flatMap { $0.isEmpty ? nil : $0 }
         if let session, claudeSessionNameSource == "user" || claudeSessionNameSource == "auto" { return session }
+        if let title = claudeSessionTitle { return title }
+        let tab = tabLabel.flatMap { $0.isEmpty || $0.allSatisfy { $0.isASCII && $0.isNumber } ? nil : $0 }
         return tab ?? session ?? HerdPaneSearch.basename(of: cwd)
+    }
+
+    /// Claude's session title from the terminal, or `nil` when the title is not one claude set: no status
+    /// glyph was stripped (a shell or `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` owns it) or it is the
+    /// "Claude Code" placeholder shown before a topic exists.
+    private var claudeSessionTitle: String? {
+        guard agent == "claude", let title = terminalTitleStripped, !title.isEmpty, title != "Claude Code",
+            let raw = terminalTitle, raw != title
+        else { return nil }
+        return title
     }
 
     /// Display ordering for agents inside one workspace: by status, then by `cwd` alphabetically.

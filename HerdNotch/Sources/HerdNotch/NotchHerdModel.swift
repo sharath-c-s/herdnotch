@@ -87,7 +87,7 @@ final class NotchHerdModel: ObservableObject {
     /// preserved across a pane-id change the user never sees.
     private struct RecencyKey: Hashable {
         let sessionName: String
-        let displayIdentifier: String
+        let paneId: String
     }
 
     /// One key's locally observed current status and the instant that status began.
@@ -485,13 +485,10 @@ final class NotchHerdModel: ObservableObject {
         }
     }
 
-    /// Local agents key on their synthetic pane id: two unnamed agents in one project share a display
-    /// identifier, and merging their recency would make one agent's finish look like the other's.
+    /// Keyed on pane id, never a name: herdr numbers tab labels per workspace, so a label key merged
+    /// agents across workspaces and one agent's status overwrote another's every poll.
     private static func recencyKey(session: HerdSession, agent: HerdAgent) -> RecencyKey {
-        RecencyKey(
-            sessionName: session.name,
-            displayIdentifier: agent.source == .local
-                ? agent.paneId : (agent.tabLabel.flatMap { $0.isEmpty ? nil : $0 } ?? agent.cwdBasename))
+        RecencyKey(sessionName: session.name, paneId: agent.paneId)
     }
 
     /// How many of the first listed agents get a transcript read each poll.

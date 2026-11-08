@@ -4,12 +4,13 @@ import Testing
 
 struct SessionNameTests {
     private func agent(
-        cwd: String = "/p/cwd-dir", tab: String? = nil, name: String? = nil, source: String? = nil,
-        sessionId: String? = nil
+        kind: String = "claude", cwd: String = "/p/cwd-dir", tab: String? = nil, name: String? = nil,
+        source: String? = nil, sessionId: String? = nil, title: String? = nil
     ) -> HerdAgent {
         HerdAgent(
-            agent: "claude", agentStatus: .idle, cwd: cwd, paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1",
-            agentSessionID: sessionId, tabLabel: tab, claudeSessionName: name, claudeSessionNameSource: source)
+            agent: kind, agentStatus: .idle, cwd: cwd, paneId: "w1:p1", tabId: "w1:t1", workspaceId: "w1",
+            agentSessionID: sessionId, terminalTitle: title.map { "✳ \($0)" }, terminalTitleStripped: title, tabLabel: tab, claudeSessionName: name,
+            claudeSessionNameSource: source)
     }
 
     private func entry(_ id: String, name: String, source: String) -> ClaudeRegistryEntry {
@@ -37,6 +38,38 @@ struct SessionNameTests {
         #expect(agent().displayName == "cwd-dir")
         #expect(agent(tab: "", name: "", source: "user").displayName == "cwd-dir")
         #expect(agent(tab: "tab", name: "", source: "user").displayName == "tab")
+    }
+
+    @Test func claudeTerminalTitleBeatsTabAndDerivedName() {
+        #expect(agent(tab: "tab", name: "mine", source: "user", title: "Live title").displayName == "mine")
+        #expect(agent(tab: "tab", name: "bar-02", source: "derived", title: "Live title").displayName == "Live title")
+        #expect(agent(tab: "1", title: "shara-brewer").displayName == "shara-brewer")
+        #expect(agent(kind: "codex", tab: "tab", title: "codex").displayName == "tab")
+        #expect(agent(tab: "tab", title: "").displayName == "tab")
+    }
+
+    @Test func titleWithoutClaudeGlyphOrPlaceholderIsIgnored() {
+        #expect(agent(tab: "1", name: "bar-02", source: "derived", title: "Claude Code").displayName == "bar-02")
+        let shellOwned = HerdAgent(
+            agent: "claude", agentStatus: .idle, cwd: "/p/cwd-dir", paneId: "w1:p1", tabId: "w1:t1",
+            workspaceId: "w1", terminalTitle: "zsh", terminalTitleStripped: "zsh", tabLabel: "1")
+        #expect(shellOwned.displayName == "cwd-dir")
+    }
+
+    @Test func numericTabLabelIsSkipped() {
+        #expect(agent(tab: "2", name: "make-me-money-b6", source: "derived").displayName == "make-me-money-b6")
+        #expect(agent(tab: "3").displayName == "cwd-dir")
+        #expect(agent(tab: "v2").displayName == "v2")
+        #expect(agent(tab: "三").displayName == "三")
+    }
+
+    @Test func decodesTerminalTitleFromAgentList() throws {
+        let json = #"{"agent":"claude","agent_status":"idle","cwd":"/p","focused":false,"pane_id":"w1:p1","tab_id":"w1:t1","workspace_id":"w1","terminal_title":"✳ shara-brewer","terminal_title_stripped":"shara-brewer"}"#
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        #expect(try d.decode(HerdAgent.self, from: Data(json.utf8)).displayName == "shara-brewer")
+        let bare = #"{"agent":"claude","agent_status":"idle","cwd":"/p/cwd-dir","focused":false,"pane_id":"w1:p1","tab_id":"w1:t1","workspace_id":"w1"}"#
+        #expect(try d.decode(HerdAgent.self, from: Data(bare.utf8)).displayName == "cwd-dir")
     }
 
     @Test func herdrAgentIsNamedBySessionIdMatch() {
