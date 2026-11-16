@@ -1,0 +1,20 @@
+  Later:
+  - Set DEMO_PROFILE=demo in your shell profile.
+  - Create the Google OAuth client.
+  - Add the optional Adzuna/RapidAPI keys.
+  - Enable keyless sources.
+
+  Next: the branch worktree-agent-a99f5c836400f3270 still exists. Deleting it needs git branch -D, because its commits reached main as cherry-picks, not
+  as merges. Say yes and I'll delete it.
+
+✻ Brewed for 1m 35s · done Monday 9:58 AM
+
+※ recap: Your demo feature work is pushed, and I finished the housekeeping: I removed the leftover worktree, and lint and tests pass. Next,
+  confirm whether I should delete the leftover branch `worktree-agent-a99f5c836400f3270` with `git branch -D`. (disable recaps in /config)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 | 📁 projects/demo | 🌿 main
+  [█░░░░░░░░░░░░░░] 9.0%    $1.45 | 120h 31m 38s
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 6 agents

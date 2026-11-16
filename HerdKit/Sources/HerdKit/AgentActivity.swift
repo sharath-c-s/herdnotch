@@ -46,13 +46,13 @@ public struct AgentActivity: Sendable, Equatable {
     }
 }
 
-enum ToolSummarizer {
+public enum ToolSummarizer {
     static let maxTarget = 48
 
     /// Tool name for display: MCP names (`mcp__server__tool`) shrink to the last segment, then clean and truncate.
-    static func displayName(_ name: String) -> String {
+    public static func displayName(_ name: String) -> String {
         let short = name.hasPrefix("mcp__") ? (name.components(separatedBy: "__").last ?? name) : name
-        return firstLine(short).map(truncate) ?? ""
+        return firstLine(short).map { truncate($0) } ?? ""
     }
 
     static func target(name: String, input: [String: Any]) -> String? {
@@ -70,7 +70,7 @@ enum ToolSummarizer {
         case "WebSearch": raw = str("query")
         default: raw = nil
         }
-        return raw.flatMap(firstLine).map(truncate)
+        return raw.flatMap(firstLine).map { truncate($0) }
     }
 
     /// First non-empty line, trimmed, with control characters (as spaces) and Unicode format characters
@@ -93,8 +93,42 @@ enum ToolSummarizer {
         return nil
     }
 
-    static func truncate(_ s: String) -> String {
-        s.count > maxTarget ? String(s.prefix(maxTarget - 1)) + "\u{2026}" : s
+    static func truncate(_ s: String, width: Int = maxTarget) -> String {
+        s.count > width ? String(s.prefix(width - 1)) + "\u{2026}" : s
+    }
+
+    /// Up to `maxLines` short lines previewing what a tool call is about to do, for an approval card.
+    public static func previewLines(name: String, input: [String: Any], maxLines: Int = 6, width: Int = 48) -> [String] {
+        func str(_ k: String) -> String? { input[k] as? String }
+        func lines(_ s: String?, limit: Int = .max) -> [String] {
+            let all = (s ?? "").split(whereSeparator: \.isNewline).compactMap { firstLine(String($0)) }
+            return Array(all.prefix(limit))
+        }
+        func diff(_ edit: [String: Any]) -> [String] {
+            lines(edit["old_string"] as? String, limit: 3).map { "- " + $0 }
+                + lines(edit["new_string"] as? String, limit: 3).map { "+ " + $0 }
+        }
+        var out: [String]
+        switch name {
+        case "Bash": out = lines(str("command"))
+        case "Edit": out = diff(input)
+        case "MultiEdit": out = ((input["edits"] as? [[String: Any]])?.first).map(diff) ?? []
+        case "Write":
+            out = lines(str("file_path"), limit: 1) + lines(str("content"), limit: max(0, maxLines - 1))
+        case "AskUserQuestion":
+            out = []
+            for q in input["questions"] as? [[String: Any]] ?? [] {
+                if let text = (q["question"] as? String).flatMap(firstLine) { out.append(text) }
+                for o in q["options"] as? [[String: Any]] ?? [] {
+                    if let label = (o["label"] as? String).flatMap(firstLine) { out.append("  \u{2022} " + label) }
+                }
+            }
+        default:
+            let shown = displayName(name)
+            out = [target(name: name, input: input).map { "\(shown): \($0)" } ?? shown]
+        }
+        if out.isEmpty { out = [displayName(name)] }
+        return out.prefix(maxLines).map { truncate($0, width: width) }
     }
 
     static func ask(name: String, input: [String: Any]) -> String {

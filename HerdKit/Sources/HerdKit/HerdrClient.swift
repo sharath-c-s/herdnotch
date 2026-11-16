@@ -9,6 +9,8 @@ public enum HerdrParam: Encodable, Sendable {
     case string(String)
     /// An integer parameter, for example a line count.
     case int(Int)
+    /// A string-array parameter, for example the key names of `pane.send_keys`.
+    case strings([String])
 
     /// Encodes as a bare JSON scalar, not a wrapper object.
     ///
@@ -19,7 +21,20 @@ public enum HerdrParam: Encodable, Sendable {
         switch self {
         case .string(let value): try container.encode(value)
         case .int(let value): try container.encode(value)
+        case .strings(let value): try container.encode(value)
         }
+    }
+}
+
+/// A snapshot of a pane's visible text.
+public struct PaneText: Sendable, Equatable, Decodable {
+    public let text: String
+    /// herdr's monotonically increasing screen revision; equal values mean the screen did not change.
+    public let revision: UInt64
+
+    public init(text: String, revision: UInt64) {
+        self.text = text
+        self.revision = revision
     }
 }
 
@@ -142,6 +157,29 @@ public struct HerdrClient: Sendable {
             guard let label = tab.label, !label.isEmpty else { return }
             table[tab.tabId] = label
         }
+    }
+
+    /// Reads the last `lines` visible lines of a pane as ANSI-stripped text.
+    ///
+    /// - Throws: Any ``HerdrError`` from ``call(_:params:timeout:)``, or ``HerdrError/decode(_:)``.
+    public func readPane(paneId: String, lines: Int = 12, timeout: TimeInterval = 2.0) throws -> PaneText {
+        let data = try call(
+            "pane.read",
+            params: ["pane_id": .string(paneId), "source": .string("visible"), "lines": .int(lines)],
+            timeout: timeout
+        )
+        return try Self.decode(PaneText.self, from: data)
+    }
+
+    /// Sends key names (`"1"`, `"esc"`, `"enter"`, `"down"`) to a pane as if typed.
+    ///
+    /// - Throws: Any ``HerdrError`` from ``call(_:params:timeout:)``.
+    public func sendKeys(paneId: String, keys: [String], timeout: TimeInterval = 2.0) throws {
+        _ = try call(
+            "pane.send_keys",
+            params: ["pane_id": .string(paneId), "keys": .strings(keys)],
+            timeout: timeout
+        )
     }
 
     // MARK: - Wire encoding and decoding

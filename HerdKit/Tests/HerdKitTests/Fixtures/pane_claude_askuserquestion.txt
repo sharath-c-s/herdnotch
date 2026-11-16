@@ -1,0 +1,16 @@
+  ⎿  Allowed by PermissionRequest hook
+
+ ☐ Colour
+
+Pick a colour?
+
+❯ 1. Red
+     Pick red
+  2. Blue
+     Pick blue
+  3. Green
+     Pick green
+  4. Type something.
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel
