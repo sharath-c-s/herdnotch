@@ -38,6 +38,11 @@ Each item was verified on a device or with a probe. Read the section for the sub
 5. `~/.claude/sessions/<pid>.json` `procStart` is UTC. A local-time parse hid every local Claude session while all tests passed.
 6. Sessions started with another `CLAUDE_CONFIG_DIR` (for example aim profiles) write their registry elsewhere, so the registry join misses them.
 7. Anthropic's usage endpoint answers 429 with `Retry-After: 0` while it still throttles. Two pollers on the same token double the load.
+8. A Claude `PermissionRequest` hook runs at the same time as the terminal dialog. A terminal "Yes" runs the tool but does NOT stop the hook process (Esc does). A pending notch card must therefore be released by the sweep (session no longer blocked), not by the hook connection closing.
+9. Claude's menus in `pane.read` text come in two shapes: numbered (`❯ 1. Yes`, with option descriptions on deeper-indented lines) and unnumbered (`❯ No, exit` plus sibling lines). Lines can be about 150 columns wide. Claude selects a numbered option on the digit key alone.
+10. A key sent with `pane.send_keys` lands on whatever prompt is on screen at that moment. Read the pane again right before the send, compare the prompt fingerprint, and refuse a second send at the same pane `revision` (a double click arrives before the agent redraws).
+11. Agents can drive a real Claude or Codex TUI for checks: `herdr tab create --cwd <dir> --no-focus`, `herdr pane run <pane> "<cmd>"`, `herdr pane wait-output <pane> --regex <re>`, `herdr pane read <pane> --source visible`, `herdr pane send-keys <pane> 1|esc|enter`. A new folder first shows the trust menu.
+12. Hook stdin and `pane.read` captures contain home paths, usernames and project names. Scrub them before a capture becomes a test fixture: this repo is public.
 
 ## Toolchain and shell
 
@@ -48,6 +53,7 @@ Each item was verified on a device or with a probe. Read the section for the sub
 5. brew reads its local tap clone, which syncs only on auto-update. `release.sh` refreshes it; without that, `brew upgrade` says the latest version is installed.
 6. A cask `uninstall delete:` for a root-owned file runs with sudo on every upgrade and fails without a tty.
 7. Look at captures, not only at numbers. A consistent measurement once hid an errored session.
-8. Agents cannot screen-record. For visual checks, set `HERDBAR_DUMP`, `HERDBAR_POPUP_DUMP` or `HERDBAR_SETTINGS_DUMP` (see `HerdHost/HerdDebugCapture.swift`, `HerdSettingsWindow.swift`) and open the PNG.
+8. Agents cannot screen-record. For visual checks, set `HERDBAR_DUMP`, `HERDBAR_POPUP_DUMP`, `HERDBAR_SETTINGS_DUMP` (see `HerdHost/HerdDebugCapture.swift`, `HerdSettingsWindow.swift`) or `HERDNOTCH_PREVIEW_DUMP=<dir>` (preview card states at default and minimum agents-card size, `HerdNotch/PreviewDebugDump.swift`) and open the PNGs.
 9. Agents cannot synthesize `F19` with `osascript` (TCC Input Monitoring denies it). Hotkey checks need the user.
 10. Deleting an ignored syscall return check is not a fix. The `SIGPIPE` and `setsockopt` bugs showed up because return values started to be checked. Keep the checks and fix the cause.
+11. `Substring.count` and `String.count` are O(n). A `while rest.count > width` wrap loop is quadratic, and a 1 MiB hook request froze the main thread in review. Walk indices with `index(_:offsetBy:limitedBy:)` and cap untrusted input before any per-render work.

@@ -46,6 +46,8 @@ Nothing. `main` = `origin/main` at the 0.1.11 commit.
 3. Search matches digit tab labels through the herdr-tab field, so typing "1" matches many agents.
 4. Sessions under another `CLAUDE_CONFIG_DIR` get only the terminal title as a name; their registry, usage and activity are not read.
 5. The `xcrun swift` now-playing fallback needs Xcode or Command Line Tools at runtime.
+6. `HerdKitTests.stalledRemoteSessionsDoNotSumIntoTheBuildTime` is timing-bound (`elapsed < 0.72 s`) and fails under machine load (seen at 0.726 s). Rerun before you blame a change.
+7. The Claude hook goes only into the config dir the installer targets. Sessions under another `CLAUDE_CONFIG_DIR` get no notch approvals and keep the terminal prompt.
 
 ## Next ideas
 
@@ -57,6 +59,9 @@ Nothing. `main` = `origin/main` at the 0.1.11 commit.
 
 | Tried | Broke because |
 |---|---|
+| A preview card drawn as a second box under the unchanged 40 pt row | The empty reserved detail line left a gap, and at the minimum panel size the row scrolled away, so the user could not see which agent they approved. Fixed by one merged block with the name and Jump in its header. |
+| Middle-ellipsized commands and single-line option buttons in the card | The user could approve a command they could not read, and Claude's 4-option menu cut labels. Wrap commands with a "N more chars" marker, flow the buttons onto rows, shorten labels at ":" or " · " with the full text in the tooltip. |
+| Hook decisions keyed by session id | A newer request for the same session replaced the card between render and click, so an answer click could allow a Bash command. Decide by request token. |
 | Install Xcode through Xcodes.app | Apple developer-portal auth returned 401. CLT alone cannot build an `.xcodeproj`. |
 | A hairline rail down each session group | Repeated what indentation already said; a 4% luminance step read as a capture artefact. |
 | Dimming idle rows toward invisible | Failed WCAG (3.05:1 and 1.28:1). Rule: de-emphasis is relative; the open panel must stay readable. |
