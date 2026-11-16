@@ -1,6 +1,6 @@
 # State
 
-Last update: 2026-11-15. Update this file when a release ships or a thread opens or closes.
+Last update: 2026-11-16 (0.1.11). Update this file when a release ships or a thread opens or closes.
 
 ## Shipped
 
@@ -16,26 +16,28 @@ Last update: 2026-11-15. Update this file when a release ships or a thread opens
 | 0.1.8 | 2026-11-02 | CPU and memory on the System page. |
 | 0.1.9 | 2026-11-04 | Health page (throttling, top processes, swarms by agent, suggestions); plain free-disk read. |
 | 0.1.10 | 2026-11-08 | Claude session title instead of herdr digit tab labels; per-pane status recency. |
+| 0.1.11 | 2026-11-16 | Preview card on row click; approve Claude prompts from the notch through a `PermissionRequest` hook (allow, always, deny, question answers); herdr pane menus through `pane.send_keys` behind a fingerprint and revision guard; Command-click jumps; bundled `install-claude-hook.sh`. |
 
-Test baselines at 0.1.10: `HerdNotch` 363 (sum of the per-target lines), `HerdKit` 147, `swift build` 0 warnings.
+Test baselines at 0.1.11: `HerdNotch` 363 (sum of the per-target lines), `HerdKit` 233, `swift build` 0 warnings.
 
 ## In flight
 
-Nothing. `main` = `origin/main` at the 0.1.10 commit.
+Nothing. `main` = `origin/main` at the 0.1.11 commit.
 
 ## Open threads
 
-1. Re-measure idle CPU on 0.1.10 against 13.7% (0.1.8) and count cache-delete `GetAPFSVolumeRole` log lines against 48 per 10 min. Commands are in `AGENTS.md`.
-2. User feedback on the Health page layout. Card fit and switcher width were computed, never seen on screen.
-3. Confirm the 0.1.10 toast shows the session name on a real finish or block.
-4. Optional, asked but not approved: usage rows per aim profile (reuse `ClaudeUsage` with `CLAUDE_CONFIG_DIR=<profile>/.claude` and `CodexUsage` with `CODEX_HOME=<profile>/.codex`, read-only).
-5. Optional, not started: contribute an `aim use` global switch upstream to adrijshikhar/aim (issue first).
-6. Optional, ask first: delete about 532 empty `com.boringherd.tests.*` plists in `~/Library/Preferences`.
-7. Developer ID signing ($99 a year) for persistent permissions and system notifications: user to decide.
-8. Unanswered: browse list "recency order" means blocked-first-then-recency (built) or pure most-recent-first.
-9. Not confirmed on device: on-device E2E for shelf drag (Esc mid-drag closes the notch), panel-size sliders with the notch open (mask may snap).
-10. Launch at login is not built (no `SMAppService` toggle). Offered in the menu-bar era, never answered.
-11. Spotify OAuth (old phase 4) waits on a Spotify developer Client ID. Low priority since system now playing works.
+1. On-device E2E for 0.1.11 approvals: allow, always, deny, question answer, Command-click in the live panel, and how long the local registry reports `waiting` while a dialog is open. The release shipped before this check.
+2. Re-measure idle CPU on 0.1.10 against 13.7% (0.1.8) and count cache-delete `GetAPFSVolumeRole` log lines against 48 per 10 min. Commands are in `AGENTS.md`.
+3. User feedback on the Health page layout. Card fit and switcher width were computed, never seen on screen.
+4. Confirm the 0.1.10 toast shows the session name on a real finish or block.
+5. Optional, asked but not approved: usage rows per aim profile (reuse `ClaudeUsage` with `CLAUDE_CONFIG_DIR=<profile>/.claude` and `CodexUsage` with `CODEX_HOME=<profile>/.codex`, read-only).
+6. Optional, not started: contribute an `aim use` global switch upstream to adrijshikhar/aim (issue first).
+7. Optional, ask first: delete about 532 empty `com.boringherd.tests.*` plists in `~/Library/Preferences`.
+8. Developer ID signing ($99 a year) for persistent permissions and system notifications: user to decide.
+9. Unanswered: browse list "recency order" means blocked-first-then-recency (built) or pure most-recent-first.
+10. Not confirmed on device: on-device E2E for shelf drag (Esc mid-drag closes the notch), panel-size sliders with the notch open (mask may snap).
+11. Launch at login is not built (no `SMAppService` toggle). Offered in the menu-bar era, never answered.
+12. Spotify OAuth (old phase 4) waits on a Spotify developer Client ID. Low priority since system now playing works.
 
 ## Known bugs
 

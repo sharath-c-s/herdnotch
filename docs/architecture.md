@@ -6,7 +6,7 @@ HerdNotch is an unsandboxed macOS app that draws a panel in the MacBook notch. I
 
 | Package / target | Kind | Job | Must not |
 |---|---|---|---|
-| `HerdKit` | library, pure Foundation | herdr socket client (`agent.list`, `workspace.list`, `tab.list`, `*.focus`), local Claude/Codex agent sources, Claude session registry join, transcript activity | import any UI framework |
+| `HerdKit` | library, pure Foundation | herdr socket client (`agent.list`, `workspace.list`, `tab.list`, `*.focus`, `pane.read`, `pane.send_keys`), local Claude/Codex agent sources, Claude session registry join, transcript activity, approval core (hook protocol, approval socket server, `ApprovalBook`, `PanePrompt`, `PreviewRoute`) | import any UI framework |
 | `HerdNotch/Sources/HerdPanelUI` | library | Ledger rows, palette, panel styles | import anything but SwiftUI and HerdKit (keep AppKit in host files) |
 | `HerdNotch/Sources/HerdShortcut` | library | Shortcut model and display names | |
 | `HerdNotch/Sources/HerdHotKey` | library | Carbon global hotkeys | share one hotkey id between instances |
@@ -49,3 +49,14 @@ Rule: put every pure decision in `NotchCore`, `NotchGeometry` or `HerdKit` so th
 ## Older design docs
 
 `docs/herd/DESIGN.md` (visual direction), `docs/herd/FEATURES.md` and `docs/herd/PLAN.md` describe the menu-bar predecessor (BoringHerdBar). Their colour, type and motion rules still apply to the ledger rows. Their phase plans are history.
+
+## Notch approvals (preview card)
+
+1. A plain click on an agent row opens a preview card under the row. A Command-click jumps to the agent and collapses the notch, as before. Search rows and the Health page always jump.
+2. Claude sessions: a user-level `PermissionRequest` hook runs `HerdNotch.app/Contents/MacOS/HerdNotch --claude-permission-hook`. This mode exits before `NSApplication` starts. It sends the hook stdin as one NDJSON line to `~/Library/Application Support/HerdNotch/approvals.sock` (mode 0600) and prints the reply line. When the app does not run, the hook prints nothing and Claude shows its normal dialog.
+3. `ApprovalSocketServer` (HerdKit) holds each connection until a decision. `ApprovalCenter` (app) keeps an `ApprovalBook` keyed by Claude session id, which equals `HerdAgent.agentSessionID`. A reply is `HookOutput.render` of `allow`, `always` (echoes the first permission suggestion), `deny`, `answers` (AskUserQuestion, one single-select question only) or `passthrough` (empty line).
+4. The terminal dialog shows at the same time as the hook. A terminal answer does not stop the hook process, so each poll calls `ApprovalBook.sweep`: it releases a request whose session is not blocked for 2 s (after a 2 s grace), and a request whose session is not in the roster after 3 s.
+5. herdr panes without a hook request (Codex, remote herdr, no hook installed): the card shows `pane.read` text and the menu that `PanePrompt` parses. A button sends `pane.send_keys` only if the prompt fingerprint is unchanged on a fresh read.
+6. Cost: one `pane.read` per poll, only for the expanded herdr row, only while the panel is open. Nothing runs while the notch is collapsed.
+7. Install: `scripts/install-claude-hook.sh` merges the hook into `${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json` with a backup. `--uninstall` removes it. Settings > Agents shows the hook status and an off switch (`herdNotchApprovals`).
+

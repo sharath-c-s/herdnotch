@@ -20,7 +20,21 @@ When an agent finishes or starts waiting for you, a short toast drops from the n
 
 Move the pointer onto the notch and it opens. The Herd page lists every agent with its status, ordered by urgency, next to your plan usage for Claude, Codex, OpenCode Go and Antigravity. The System page holds now playing with a seek bar, your Reminders, battery and power details, and the keep-awake controls. A shelf at the bottom keeps files you drag onto the notch until you drag them out again.
 
-Agents carry the name you gave the session. If you renamed a Claude session with `/rename`, HerdNotch uses that name; otherwise it uses Claude's own title, then the herdr tab name, then the folder. Click an agent to jump to it: HerdNotch finds the iTerm2 or Terminal tab, the tmux pane, or the IDE window that runs it.
+Agents carry the name you gave the session. If you renamed a Claude session with `/rename`, HerdNotch uses that name; otherwise it uses Claude's own title, then the herdr tab name, then the folder. Click an agent to see a preview of what it does and what it asks. Command-click an agent to jump to it: HerdNotch finds the iTerm2 or Terminal tab, the tmux pane, or the IDE window that runs it.
+
+## Approve from the notch
+
+When an agent asks for permission, click its row. The card shows the command, the edit or the question, with Allow, Always, Deny and Jump buttons. For a question with one choice, the card shows one button for each answer. Jump opens the agent's terminal, where the normal prompt waits.
+
+Claude Code prompts go through a Claude Code hook. Install it once with:
+
+```sh
+./scripts/install-claude-hook.sh
+```
+
+The script backs up `~/.claude/settings.json` first. Run it with `--uninstall` to remove the hook. New Claude sessions pick it up. When HerdNotch does not run, the hook does nothing and Claude asks in the terminal as usual. The terminal prompt stays live while the notch waits, so you can answer in either place.
+
+For agents in herdr, such as Codex, the card reads the pane and shows the menu that the agent prints. A button sends that key to the pane, but only if the prompt did not change after the card read it.
 
 ## With or without herdr
 
