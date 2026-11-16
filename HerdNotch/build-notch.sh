@@ -102,6 +102,8 @@ cp "$ADAPTER_SRC/bin/mediaremote-adapter.pl" "$APP_DIR/Contents/Resources/mediar
 cp "$ADAPTER_SRC/LICENSE" "$APP_DIR/Contents/Resources/mediaremote-adapter-LICENSE"
 cp ../ThirdPartyLicenses/* "$APP_DIR/Contents/Resources/"
 cp ../NOTICE.md "$APP_DIR/Contents/Resources/NOTICE.md"
+cp ../scripts/install-claude-hook.sh "$APP_DIR/Contents/Resources/install-claude-hook.sh"
+chmod +x "$APP_DIR/Contents/Resources/install-claude-hook.sh"
 
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

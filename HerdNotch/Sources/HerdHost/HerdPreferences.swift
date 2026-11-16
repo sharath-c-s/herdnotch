@@ -61,6 +61,8 @@ public final class HerdPreferences: ObservableObject {
         static let agentSourceMode = "herdAgentSourceMode"
         /// Whether clicking a local agent tries to bring its terminal or IDE forward.
         static let jumpToAgent = "herdJumpToAgent"
+        /// Whether Claude permission prompts can be answered from the notch.
+        static let notchApprovals = "herdNotchApprovals"
         /// Minutes a task must run before its finish is announced. 0 announces every finish as before.
         static let longTaskMinutes = "herdLongTaskMinutes"
     }
@@ -106,6 +108,7 @@ public final class HerdPreferences: ObservableObject {
             Key.remotePaths: [String](),
             Key.agentSourceMode: AgentSourceMode.both.rawValue,
             Key.jumpToAgent: true,
+            Key.notchApprovals: true,
             Key.longTaskMinutes: 5
         ]
         shipped.merge(HerdShortcutStore.registrationDefaults) { current, _ in current }
@@ -254,6 +257,12 @@ public final class HerdPreferences: ObservableObject {
     public var jumpToAgentEnabled: Bool {
         get { defaults.bool(forKey: Key.jumpToAgent) }
         set { set(newValue, forKey: Key.jumpToAgent) }
+    }
+
+    /// Whether Claude permission prompts can be answered from the notch. Off, every hook request passes through.
+    public var notchApprovalsEnabled: Bool {
+        get { defaults.bool(forKey: Key.notchApprovals) }
+        set { set(newValue, forKey: Key.notchApprovals) }
     }
 
     /// Upper bound of ``longTaskMinutes``, so a hand-edited plist cannot silence finish alerts for days.

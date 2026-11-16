@@ -201,6 +201,9 @@ final class NotchWindowController: NSObject {
     /// already gets its own reference passed down through `makePanel(for:layout:)`.
     let herdModel: NotchHerdModel
 
+    /// Holds Claude PermissionRequest hook connections until a decision; started and stopped with the controller.
+    let approvals: ApprovalCenter
+
     /// The caffeinate toggle, shared by every display's home surface and by `NotchAppDelegate`'s status-item
     /// menu item and Ctrl-Ctrl hotkey. One instance for the same reason ``herdModel`` is one instance: an
     /// idle-sleep assertion is a fact about the machine, not about which display's panel happens to be open,
@@ -391,13 +394,16 @@ final class NotchWindowController: NSObject {
     ///   the one store `HerdNotch/HerdSettingsWindow` (via `HerdHost`) edits.
     init(preferences: HerdPreferences) {
         self.herdModel = NotchHerdModel(preferences: preferences)
+        self.approvals = ApprovalCenter(preferences: preferences)
         self.preferences = preferences
         super.init()
+        herdModel.approvals = approvals
     }
 
     /// The single process-exit teardown hook, called from `applicationWillTerminate`. Every service that
     /// holds system state past its own lifetime (power assertions, `pmset` overrides) releases it here.
     func shutdown() {
+        approvals.stop()
         keepAwakeService.shutdown()
         caffeinateService.releaseForShutdown()
     }
@@ -407,6 +413,7 @@ final class NotchWindowController: NSObject {
     func start() {
         lidSleepController.recoverIfNeeded()
         herdModel.start()
+        approvals.start()
         remindersService.start()
         shelfService.onMessage = { [weak self] message in self?.showShelfToast(message) }
         shelfService.start()
@@ -1146,6 +1153,7 @@ final class NotchWindowController: NSObject {
             rootView: NotchContentView(
                 viewModel: viewModel,
                 herdModel: herdModel,
+                approvals: approvals,
                 caffeinateService: caffeinateService,
                 keepAwakeService: keepAwakeService,
                 lidSleepController: lidSleepController,

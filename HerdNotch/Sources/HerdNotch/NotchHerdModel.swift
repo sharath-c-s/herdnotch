@@ -77,6 +77,27 @@ final class NotchHerdModel: ObservableObject {
     /// ``updateTopAgents(from:now:)``). Empty before the first poll.
     @Published private(set) var topAgents: [NotchAgentEntry] = []
 
+    /// Pane id of the one agent row showing its preview card, or nil.
+    ///
+    /// Shared by every display's panel, which is safe only because the reducer keeps at most one panel
+    /// expanded. Cleared when the panel next becomes active, enters search mode or leaves the Herd page.
+    @Published var expandedPaneID: String? {
+        didSet {
+            guard expandedPaneID != oldValue else { return }
+            expandedPaneText = nil
+            if expandedPaneID != nil { Task { await refreshExpandedPane() } }
+        }
+    }
+
+    /// Tail of the expanded pane, refreshed once per poll tick while it stays expanded. Herdr agents only.
+    @Published private(set) var expandedPaneText: PaneText?
+
+    /// Screen revision each pane had when keys were last sent to it, so one redraw cannot be answered twice.
+    private var lastSentRevision: [String: UInt64] = [:]
+
+    /// Set by the controller; the poll sweeps it. Nil in tests and the preview dump.
+    weak var approvals: ApprovalCenter?
+
     /// Activity read on the latest poll, keyed by transcript id (see `AgentActivityTracker.transcriptID`).
     /// Lets search rows show an activity line without triggering any transcript read of their own.
     @Published private(set) var activityByTranscriptID: [String: AgentActivity] = [:]
@@ -250,6 +271,8 @@ final class NotchHerdModel: ObservableObject {
         guard active != isActive else { return }
         isActive = active
         guard active else { return }
+        // Cleared on the next open, not at collapse, so the animating panel does not jump.
+        expandedPaneID = nil
         stop()
         start()
     }
@@ -303,7 +326,65 @@ final class NotchHerdModel: ObservableObject {
             if ordered != snapshot {
                 snapshot = ordered
             }
+            sweepApprovals(raw)
+            await refreshExpandedPane()
         } while pollAgainRequested
+    }
+
+    /// Releases approvals that will never get a UI decision.
+    private func sweepApprovals(_ raw: HerdSnapshot) {
+        guard let approvals else { return }
+        let agents = raw.sessions.flatMap(\.workspaces).flatMap(\.agents)
+        approvals.sweep(
+            now: Date(),
+            knownSessionIDs: Set(agents.compactMap(\.agentSessionID)),
+            blockedSessionIDs: Set(agents.filter { $0.agentStatus == .blocked }.compactMap(\.agentSessionID)))
+    }
+
+    /// Reads the expanded pane's tail off the main actor. Never runs while collapsed or for local agents.
+    private func refreshExpandedPane() async {
+        guard isActive, let id = expandedPaneID else { return }
+        guard let entry = topAgents.first(where: { $0.id == id }) else {
+            // Only a published list without the agent clears it; before the first poll the list is empty.
+            if !topAgents.isEmpty { expandedPaneID = nil }
+            return
+        }
+        guard entry.agent.source == .herdr else { return }
+        let socketPath = entry.session.socketPath
+        let text = await onQueue { try? HerdrClient(socketPath: socketPath).readPane(paneId: id, lines: 12) }
+        if expandedPaneID == id, isActive, let text, text != expandedPaneText { expandedPaneText = text }
+    }
+
+    /// What ``sendPaneOption(_:optionIndex:shown:)`` did.
+    enum PaneSendOutcome: Sendable { case sent, stale, failed }
+
+    /// Answers a pane menu if it still matches what the card showed (`shown`), else just refreshes the card.
+    ///
+    /// `optionIndex` nil sends the deny keys. The gate and the keys live in HerdKit; this only does the I/O.
+    func sendPaneOption(_ entry: NotchAgentEntry, optionIndex: Int?, shown: PanePrompt) async -> PaneSendOutcome {
+        let socketPath = entry.session.socketPath
+        let paneID = entry.id
+        let lastRevision = lastSentRevision[paneID]
+        let result: (PaneSendOutcome, PaneText?) = await onQueue {
+            let client = HerdrClient(socketPath: socketPath)
+            guard let fresh = try? client.readPane(paneId: paneID, lines: 12) else { return (.failed, nil) }
+            let keys = optionIndex.map { PanePrompt.answerKeys(fresh: fresh.text, shown: shown, optionIndex: $0) }
+                ?? PanePrompt.cancelKeys(fresh: fresh.text, shown: shown)
+            guard let keys, PaneSendGuard.allows(freshRevision: fresh.revision, lastSentRevision: lastRevision) else {
+                return (.stale, fresh)
+            }
+            guard !keys.isEmpty, (try? client.sendKeys(paneId: paneID, keys: keys)) != nil else { return (.failed, fresh) }
+            return (.sent, fresh)
+        }
+        if result.0 == .sent, let revision = result.1?.revision { lastSentRevision[paneID] = revision }
+        if expandedPaneID == paneID, let text = result.1 { expandedPaneText = text }
+        return result.0
+    }
+
+    private func onQueue<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: work()) }
+        }
     }
 
     /// Recomputes ``recency`` and ``topAgents`` from `snapshot`, once per poll.

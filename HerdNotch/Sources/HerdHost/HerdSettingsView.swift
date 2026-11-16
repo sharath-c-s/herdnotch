@@ -1,3 +1,4 @@
+import AppKit
 import HerdHotKey
 import HerdKit
 import HerdPanelUI
@@ -32,6 +33,17 @@ public struct HerdSettingsView: View {
 
     /// Every discovered session name, including ones the filter is hiding.
     @ObservedObject var roster: HerdSessionRoster
+
+    /// Whether the Claude PermissionRequest hook is registered; re-read each time the form appears.
+    @State private var claudeHookInstalled = ClaudeHookStatus.isInstalled()
+
+    /// The bundled installer, quoted for a shell with a trailing space for flags; the repo path outside a bundle.
+    private static var hookInstallCommand: String {
+        if let url = Bundle.main.url(forResource: "install-claude-hook", withExtension: "sh") {
+            return "\"\(url.path)\" "
+        }
+        return "scripts/install-claude-hook.sh"
+    }
 
     /// Drives the palette for the few places this form spends a token of its own.
     @Environment(\.colorScheme) private var colorScheme
@@ -90,6 +102,7 @@ public struct HerdSettingsView: View {
         }
         .frame(width: Self.contentWidth)
         .frame(maxHeight: Self.maxBodyHeight)
+        .onAppear { claudeHookInstalled = ClaudeHookStatus.isInstalled() }
     }
 
     // MARK: - Shortcut
@@ -224,6 +237,33 @@ public struct HerdSettingsView: View {
                 "Brings a local agent's terminal tab, tmux pane or IDE forward. Off, clicking a local agent "
                     + "does nothing. herdr agents always focus their pane."
             )
+            Toggle(
+                "Approve Claude prompts from the notch",
+                isOn: Binding(
+                    get: { preferences.notchApprovalsEnabled },
+                    set: { preferences.notchApprovalsEnabled = $0 }
+                )
+            )
+            .help(
+                "Shows Claude Code permission prompts in the notch so you can allow or deny them there. "
+                    + "Off, Claude asks in its own terminal as usual. Needs the Claude hook installed."
+            )
+            if claudeHookInstalled {
+                Text("Claude hook installed")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 6) {
+                    Text("Claude hook not installed. Paste the copied command in a terminal.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    Button("Copy command") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(Self.hookInstallCommand, forType: .string)
+                    }
+                    .controlSize(.small)
+                }
+            }
             Stepper(
                 value: Binding(
                     get: { preferences.longTaskMinutes },

@@ -1,9 +1,22 @@
 import AppKit
 import Combine
+import Foundation
 import HerdHost
+import HerdKit
 import HerdHotKey
 import HerdShortcut
 import NotchCore
+
+// `--claude-permission-hook`: relay Claude Code's PermissionRequest stdin to the running app and exit,
+// before any AppKit object exists so no Dock icon or window can appear. Empty stdout means "no opinion".
+if CommandLine.arguments.contains(PermissionHookClient.flag) {
+    let arguments = CommandLine.arguments
+    let override = arguments.firstIndex(of: "--socket").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+    let socketPath = override ?? PermissionHookClient.defaultSocketPath
+    let reply = PermissionHookClient.run(stdin: FileHandle.standardInput.readDataToEndOfFile(), socketPath: socketPath)
+    FileHandle.standardOutput.write(reply)
+    exit(0)
+}
 
 // Process entry point.
 //
@@ -121,6 +134,10 @@ private final class NotchAppDelegate: NSObject, NSApplicationDelegate {
     private var caffeinateObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let dumpDirectory = ProcessInfo.processInfo.environment["HERDNOTCH_PREVIEW_DUMP"] {
+            PreviewDebugDump.run(into: dumpDirectory)
+            exit(0)
+        }
         installMinimalAppMenu()
         // Wired before `start()`, though no panel exists yet to use it either way: this is the one place
         // `windowController.onOpenSettings` is ever assigned, and doing it here rather than scattered near

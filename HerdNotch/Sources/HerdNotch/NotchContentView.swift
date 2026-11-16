@@ -49,6 +49,9 @@ struct NotchContentView: View {
     /// rather than each running its own poll loop.
     @ObservedObject var herdModel: NotchHerdModel
 
+    /// Pending hook requests, for the agent preview card's Allow/Deny.
+    @ObservedObject var approvals: ApprovalCenter
+
     /// The shared caffeinate toggle, owned by `NotchWindowController` for the same "one machine-wide fact"
     /// reason ``herdModel`` is shared: an idle-sleep assertion belongs to the process, not to whichever
     /// display's panel happens to be open, so every panel reads and drives the same instance.
@@ -314,6 +317,12 @@ struct NotchContentView: View {
         // The only SwiftUI drop target. The collapsed pill's `NotchHoverView` is a separate NSView layered
         // above this one, so AppKit routes any given drop to exactly one of them.
         .onDrop(of: [.fileURL], isTargeted: shelfDropTargetBinding, perform: handleShelfDrop)
+        .onChange(of: isSearchMode) { _, searching in
+            if searching { herdModel.expandedPaneID = nil }
+        }
+        .onChange(of: viewModel.page) { _, page in
+            if page != .herd { herdModel.expandedPaneID = nil }
+        }
         .onAppear(perform: startRevealAnimation)
         .onAppear(perform: startClock)
         .onDisappear(perform: stopClock)
@@ -660,7 +669,8 @@ struct NotchContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                agentsFooter
+                // Hidden while a preview is open: its height goes to the list so the block fits the short card.
+                if herdModel.expandedPaneID == nil || isSearchMode { agentsFooter }
             }
             .padding(Bento.heroPadding)
         }
@@ -713,25 +723,52 @@ struct NotchContentView: View {
     /// The browse-mode list of every live agent, from ``NotchHerdModel/topAgents``, scrolling when taller
     /// than the card. Scroll momentum is locked panel-wide by `NotchPanel`, so a fling cannot collapse it.
     private var agentsBrowseList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(herdModel.topAgents) { entry in
-                    NotchBreadcrumbRow(
-                        palette: palette,
-                        status: entry.effectiveStatus,
-                        sessionName: entry.session.name,
-                        workspaceLabel: entry.workspace.label ?? entry.workspace.workspaceId,
-                        agentName: entry.agent.displayIdentifier,
-                        agentKind: entry.agent.agent == entry.agent.displayIdentifier ? "" : entry.agent.agent,
-                        trailingText: entry.relativeAge,
-                        activity: entry.activity,
-                        isSearchSelected: false,
-                        onTap: { onSelectAgent(entry.session, entry.agent) }
-                    )
+        GeometryReader { geometry in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(herdModel.topAgents) { entry in
+                            if herdModel.expandedPaneID == entry.id {
+                                AgentPreviewHost(
+                                    palette: palette, entry: entry, herdModel: herdModel, approvals: approvals,
+                                    viewport: geometry.size, onSelectAgent: onSelectAgent
+                                )
+                                .id(Self.previewCardID(entry.id))
+                            } else {
+                                NotchBreadcrumbRow(
+                                    palette: palette,
+                                    status: entry.effectiveStatus,
+                                    sessionName: entry.session.name,
+                                    workspaceLabel: entry.workspace.label ?? entry.workspace.workspaceId,
+                                    agentName: entry.agent.displayIdentifier,
+                                    agentKind: entry.agent.agent == entry.agent.displayIdentifier ? "" : entry.agent.agent,
+                                    trailingText: entry.relativeAge,
+                                    activity: entry.activity,
+                                    isSearchSelected: false,
+                                    accessibilityHintText: "Shows a preview. Command-click jumps to the agent.",
+                                    onTap: {
+                                        // Read at tap time: Command-click keeps the jump, a plain click previews.
+                                        if NSEvent.modifierFlags.contains(.command) {
+                                            onSelectAgent(entry.session, entry.agent)
+                                        } else {
+                                            herdModel.expandedPaneID = entry.id
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                .onChange(of: herdModel.expandedPaneID) { _, id in
+                    guard let id else { return }
+                    // After the block is inserted, so its top (the agent's name) is what stays in view.
+                    DispatchQueue.main.async { proxy.scrollTo(Self.previewCardID(id), anchor: .top) }
                 }
             }
         }
     }
+
+    private static func previewCardID(_ paneID: String) -> String { "preview-" + paneID }
 
     /// The empty state: nothing herdr reports as blocked, working, idle, or recently done.
     private var agentsEmptyState: some View {
@@ -1520,7 +1557,7 @@ private struct NotchIconButton: View {
 /// Line 1: status dot, agent name (takes the remaining width), context ring, then the trailing slot (age,
 /// or a `chevron.right` on hover; search rows pass `""`). Line 2 is always present so every row has the
 /// same height: see ``detailLine``. The workspace is not drawn, but VoiceOver still reads it.
-private struct NotchBreadcrumbRow: View {
+struct NotchBreadcrumbRow: View {
     static let height: CGFloat = 40
 
     let palette: HerdPalette
@@ -1537,6 +1574,7 @@ private struct NotchBreadcrumbRow: View {
     /// Whether this is the keyboard's current row, in search mode. Always `false` in browse mode, which has
     /// no keyboard selection of its own.
     let isSearchSelected: Bool
+    var accessibilityHintText = "Focuses this agent's pane and closes the notch."
     /// Invoked on click.
     let onTap: () -> Void
 
@@ -1584,7 +1622,7 @@ private struct NotchBreadcrumbRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityHint("Focuses this agent's pane and closes the notch.")
+        .accessibilityHint(accessibilityHintText)
     }
 
     /// Line 1: dot, agent name, context ring and the trailing slot.
