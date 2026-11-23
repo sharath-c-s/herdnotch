@@ -124,6 +124,9 @@ struct NotchContentView: View {
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
 
+    /// The reminders view asks to hold or release the `textEntry` lock; the controller owns the pairing.
+    let onTextEntry: (Bool) -> Void
+
     /// Invoked when the user picks an agent, from either ``agentsHeroCard``'s browse-mode shortlist or its
     /// search-mode results. `NotchWindowController` forwards this to `HerdFocusService.focus(agent:in:)`
     /// and then collapses this display's panel — see that controller's own `onSelectAgent` documentation —
@@ -187,18 +190,14 @@ struct NotchContentView: View {
     @State private var isAddingReminder = false
     @FocusState private var isReminderFieldFocused: Bool
 
-    /// Reminder ids mid-complete: the circle has already filled and the title has already struck through,
-    /// but ``RemindersService/complete(_:)`` (which is what actually removes the row) has not been called
-    /// yet — see ``completeReminder(_:)`` for the 400ms choreography this backs.
-    @State private var completingReminderIDs: Set<String> = []
-
     /// Miscellaneous small-control hover flags, each backing a single button's hover-only visual change.
     @State private var isOpenSpotifyHovering = false
     @State private var isQuickAddHovering = false
-    @State private var isSettingsLinkHovering = false
 
     /// Whether a file drag is currently over the open panel; highlights ``shelfCard``'s border.
     @State private var isShelfDropTargeted = false
+    /// Set once a file drag opened or entered this panel; cleared when it collapses so the shelf cannot flap.
+    @State private var shelfLatched = false
 
     /// Resolved once per redraw from the environment, matching `HerdPalette.resolving(_:)`'s existing
     /// convention elsewhere in the app.
@@ -219,11 +218,15 @@ struct NotchContentView: View {
     }
 
     /// The card frames for this display's current panel size.
-    private var layout: BentoLayout { BentoLayout(panel: viewModel.expandedSize) }
+    private var layout: BentoLayout { BentoLayout(panel: viewModel.expandedSize, shelfExpanded: shelfExpanded) }
 
-    private var systemLayout: SystemLayout { SystemLayout(panel: viewModel.expandedSize) }
+    private var systemLayout: SystemLayout { SystemLayout(panel: viewModel.expandedSize, shelfExpanded: shelfExpanded) }
 
-    private var healthLayout: HealthLayout { HealthLayout(panel: viewModel.expandedSize) }
+    private var healthLayout: HealthLayout { HealthLayout(panel: viewModel.expandedSize, shelfExpanded: shelfExpanded) }
+
+    /// The shelf card is tall only when it holds files or a file drag is over the panel.
+    /// Latched for the open session: SwiftUI's `isTargeted` is false while a file hovers the pill's NSView.
+    private var shelfExpanded: Bool { !shelfService.items.isEmpty || isShelfDropTargeted || shelfLatched }
 
     var body: some View {
         Group {
@@ -235,7 +238,16 @@ struct NotchContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onExitCommand(perform: onEscape)
+        .onExitCommand {
+            if viewModel.reminderMode != nil,
+                ReminderEscape.action(text: "", returnsToPage: viewModel.reminderReturnsToPage) == .backToPage
+            {
+                viewModel.reminderMode = nil
+                viewModel.reminderReturnsToPage = false
+            } else {
+                onEscape()
+            }
+        }
     }
 
     // MARK: - Collapsed wings
@@ -290,7 +302,9 @@ struct NotchContentView: View {
                 .position(x: layout.band.midX, y: layout.band.maxY)
                 .opacity(heroReveal)
             // A plain content swap: no animation, same expanded frame, shelf on both pages.
-            if viewModel.page == .system {
+            if viewModel.reminderMode != nil {
+                remindersPanel
+            } else if viewModel.page == .system {
                 SystemPageView(
                     layout: systemLayout, palette: palette, now: now, power: powerInfoService,
                     battery: batteryService, keepAwake: keepAwakeService, caffeinate: caffeinateService,
@@ -322,6 +336,18 @@ struct NotchContentView: View {
         }
         .onChange(of: viewModel.page) { _, page in
             if page != .herd { herdModel.expandedPaneID = nil }
+            viewModel.reminderMode = nil
+            viewModel.reminderReturnsToPage = false
+        }
+        .onChange(of: viewModel.reminderMode) { _, mode in
+            // The search field is hidden under the reminders view; stop it swallowing Up/Down.
+            guard mode != nil else { return }
+            isSearchMode = false
+            searchKeyNav.isActive = false
+        }
+        .onAppear { if viewModel.presentation == .expanding(.fileDrag) { shelfLatched = true } }
+        .onChange(of: viewModel.presentation) { _, presentation in
+            if presentation == .expanding(.fileDrag) { shelfLatched = true }
         }
         .onAppear(perform: startRevealAnimation)
         .onAppear(perform: startClock)
@@ -336,7 +362,10 @@ struct NotchContentView: View {
             // search field at all.
             pageHoverWork?.cancel()
             pageHoverWork = nil
+            shelfLatched = false
             viewModel.page = .herd
+            viewModel.reminderMode = nil
+            viewModel.reminderReturnsToPage = false
             isSearchMode = false
             searchQuery = ""
             searchKeyNav.selection = 0
@@ -372,59 +401,30 @@ struct NotchContentView: View {
 
     // MARK: - Utility band
 
-    /// Left flank: clock and date, left-aligned starting at `x16`, vertically centered in the 44pt band.
+    /// Left flank: clock over date, then the page switcher, left-aligned starting at `x16`.
     private var utilityBandLeft: some View {
-        HStack(spacing: 8) {
-            Text(clockText)
-                .font(.system(size: 15, weight: .semibold))
-                .monospacedDigit()
-                .foregroundStyle(palette.textPrimary)
-            Text(dateText)
-                .font(.system(size: 12))
-                .foregroundStyle(palette.textSecondary)
-                .lineLimit(1)
-                .fixedSize()
-            pageSwitcher
+        HStack(spacing: 16) {
+            BandClockView(clock: clockText, date: dateText, palette: palette)
+            PageSwitcherView(
+                selected: viewModel.page, palette: palette,
+                onSelect: { page in
+                    viewModel.reminderMode = nil
+                    viewModel.reminderReturnsToPage = false
+                    viewModel.page = page
+                },
+                onHover: { page, hovering in
+                    pageHoverWork?.cancel()
+                    pageHoverWork = nil
+                    guard hovering, viewModel.page != page, !isSearchMode, viewModel.reminderMode == nil else { return }
+                    let work = DispatchWorkItem { [viewModel] in viewModel.page = page }
+                    pageHoverWork = work
+                    let dwell = Double(NotchPreferences.shared.pageHoverDwellMs) / 1000
+                    DispatchQueue.main.asyncAfter(deadline: .now() + dwell, execute: work)
+                })
             Spacer(minLength: 0)
         }
         .frame(width: 244, height: 36, alignment: .leading)
         .opacity(heroReveal)
-    }
-
-    /// `Herd  System  Health`, the current one in semibold: switches the expanded content between the three pages on click or a hover dwell.
-    /// Plain buttons, no animation.
-    private var pageSwitcher: some View {
-        HStack(spacing: 2) {
-            pageButton("Herd", page: .herd)
-            pageButton("System", page: .system)
-            pageButton("Health", page: .health)
-        }
-    }
-
-    private func pageButton(_ title: String, page: NotchPage) -> some View {
-        let selected = viewModel.page == page
-        return Button(action: { viewModel.page = page }) {
-            Text(title)
-                .font(.system(size: 11, weight: selected ? .semibold : .regular))
-                .foregroundStyle(selected ? palette.textPrimary : palette.textSecondary)
-                .padding(.horizontal, 3)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .onHover { hovering in
-            pageHoverWork?.cancel()
-            pageHoverWork = nil
-            guard hovering, !selected, !isSearchMode else { return }
-            let work = DispatchWorkItem { [viewModel] in viewModel.page = page }
-            pageHoverWork = work
-            let dwell = Double(NotchPreferences.shared.pageHoverDwellMs) / 1000
-            DispatchQueue.main.asyncAfter(deadline: .now() + dwell, execute: work)
-        }
-        .help("Hover or click to show \(title)")
-        .accessibilityLabel("\(title) page")
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     /// Right flank: caffeinate toggle and settings gear, right-aligned so the cluster's own trailing edge
@@ -442,14 +442,15 @@ struct NotchContentView: View {
 
     /// A ~28pt circular gauge that fills clockwise from 12 o'clock by charge percentage, shown only on Macs
     /// with an internal battery. Ring color follows ``BatteryTier`` (``NotchPreferences/batteryThresholds``)
-    /// per the spec's status-color discipline (color only where it means something) — still tier-colored
+    /// per the spec's status-color discipline (neutral when healthy) — still tier-colored
     /// while charging, since a charging battery sitting at 8% is still worth flagging red. A small
     /// `bolt.fill` badge overlays the ring while charging.
     private var batteryIndicator: some View {
         let percent = batteryService.percent ?? 0
         let fraction = Double(percent) / 100
         let tier = BatteryAlert.tier(percent: percent, thresholds: NotchPreferences.shared.batteryThresholds)
-        let tierColor = palette.color(for: tier)
+        // Colour only on exceptions: a healthy ring stays neutral.
+        let tierColor = tier == .healthy ? palette.textSecondary : palette.color(for: tier)
         return ZStack {
             Circle()
                 .stroke(palette.hairline, lineWidth: 3)
@@ -496,8 +497,7 @@ struct NotchContentView: View {
 
     /// Built once: a `DateFormatter` per render is costly. They keep the locale they were built with.
     private static let formatters = (
-        clockText: templateFormatter("HH:mm"), dateText: templateFormatter("EEE d"),
-        dueHour: templateFormatter("ha"), dueWeekday: templateFormatter("EEE"), dueDate: templateFormatter("MMM d")
+        clockText: templateFormatter("HH:mm"), dateText: templateFormatter("EEE d")
     )
 
     private static func templateFormatter(_ template: String) -> DateFormatter {
@@ -986,7 +986,12 @@ struct NotchContentView: View {
             set: { targeted in
                 guard targeted != isShelfDropTargeted else { return }
                 isShelfDropTargeted = targeted
-                if targeted { onDragBegan() } else { onDragEnded() }
+                if targeted {
+                    shelfLatched = true
+                    onDragBegan()
+                } else {
+                    onDragEnded()
+                }
             })
     }
 
@@ -1234,64 +1239,49 @@ struct NotchContentView: View {
         .offset(y: (1 - remindersReveal) * 8)
     }
 
-    /// `REMINDERS` uppercase label, plus a `+N` overflow count once more than 3 incomplete reminders exist.
+    /// `REMINDERS` header (a button that opens the full view) plus a `+N` overflow count once more than 3 exist.
     private var remindersHeader: some View {
         let overflow = max(0, remindersService.items.count - 3)
-        return HStack {
-            Text("REMINDERS")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.8)
-                .foregroundStyle(palette.textSecondary)
-            Spacer(minLength: 8)
-            if remindersService.authorizationState == .authorized, overflow > 0 {
-                Text("+\(overflow)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(palette.textTertiary)
+        return Button(action: {
+            viewModel.reminderReturnsToPage = true
+            viewModel.reminderMode = .list
+        }) {
+            HStack {
+                Text("REMINDERS")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 8)
+                if remindersService.authorizationState == .authorized, overflow > 0 {
+                    Text("+\(overflow)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(palette.textTertiary)
+                }
             }
+            .frame(height: 16)
+            .contentShape(Rectangle())
         }
-        .frame(height: 16)
+        .buttonStyle(.plain)
+        .help("Show all reminders")
     }
 
-    /// The item area: one of the three access states, or (once authorized) every incomplete reminder in a
-    /// scrollable list plus the permanent quick-add row — the header and quick-add always stay put, only
-    /// the scrolling list between them changes shape or count.
+    /// The item area: an access prompt, or (once authorized) every incomplete reminder in a scrollable list
+    /// plus the permanent quick-add row; only the list between the pinned header and quick-add scrolls.
     private var remindersBody: some View {
         Group {
             switch remindersService.authorizationState {
-            case .notDetermined:
-                reminderAuthPrompt(
-                    message: "Herd needs access to Reminders",
-                    actionTitle: "Grant Access",
-                    action: remindersService.requestAccess
-                )
-            case .denied:
-                reminderDeniedPrompt
+            case .notDetermined, .denied:
+                ReminderAccessPromptView(
+                    state: remindersService.authorizationState, palette: palette,
+                    onRequestAccess: remindersService.requestAccess)
             case .authorized:
                 VStack(alignment: .leading, spacing: 0) {
                     if remindersService.items.isEmpty {
-                        reminderEmptyState
+                        ReminderEmptyStateView(palette: palette)
                     } else {
-                        // A `ScrollView` rather than the fixed `.prefix(3)` list this used to be: the card
-                        // itself keeps its fixed bento frame, but the reminders it holds no longer cap out
-                        // at 3 — this is the only part of the card's content region that scrolls, so the
-                        // header above and ``reminderQuickAdd`` below both stay pinned regardless of how
-                        // many rows are in view.
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                ForEach(remindersService.items) { item in
-                                    reminderRow(item)
-                                        // Explicit, stable identity per row (on top of `ForEach`'s own
-                                        // `Identifiable`-driven diffing) so a row's in-flight completion
-                                        // animation and its `Button` action stay bound to the same
-                                        // `ReminderItem.id` through a `refresh()`-driven reflow, rather than
-                                        // SwiftUI reusing a view slot across two different reminders mid-list
-                                        // change.
-                                        .id(item.id)
-                                }
-                            }
-                        }
-                        .frame(maxHeight: .infinity)
-                        .animation(.easeOut(duration: 0.18), value: remindersService.items)
+                        ReminderListView(
+                            items: remindersService.items, palette: palette, now: now,
+                            onComplete: remindersService.complete)
                     }
                     reminderQuickAdd
                 }
@@ -1300,170 +1290,24 @@ struct NotchContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// The `notDetermined`/`denied` access states share this one-sentence-plus-capsule shape; `denied`'s own
-    /// underline-on-hover link is ``reminderDeniedPrompt`` instead, since it is not a capsule button.
-    ///
-    /// - Parameters:
-    ///   - message: The one-sentence explanation.
-    ///   - actionTitle: The capsule button's label.
-    ///   - action: Invoked on tap.
-    private func reminderAuthPrompt(message: String, actionTitle: String, action: @escaping () -> Void) -> some View {
-        VStack(spacing: 8) {
-            Text(message)
-                .font(.system(size: 12))
-                .foregroundStyle(palette.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Button(action: action) {
-                Text(actionTitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.08), in: Capsule())
-            }
-            .buttonStyle(.plain)
+    /// The full-panel reminders view in the cards area, replacing the page content.
+    private var remindersPanel: some View {
+        bentoCard(frame: RemindersPanelView.frame(in: layout), isHovering: .constant(false)) {
+            RemindersPanelView(
+                palette: palette, mode: viewModel.reminderMode ?? .list, items: remindersService.items,
+                authorizationState: remindersService.authorizationState, now: now,
+                returnsToPage: viewModel.reminderReturnsToPage, focusToken: viewModel.reminderFocusToken,
+                blurToken: viewModel.reminderBlurToken, onTextEntry: onTextEntry,
+                onAdd: { remindersService.addReminder(title: $0.title, due: $0.due, hasTime: $0.hasTime) },
+                onComplete: remindersService.complete,
+                onRequestAccess: remindersService.requestAccess,
+                onEscape: onEscape,
+                onBack: {
+                    viewModel.reminderMode = nil
+                    viewModel.reminderReturnsToPage = false
+                })
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// The `denied`/`restricted` state: a sentence plus an underline-on-hover "Open Settings…" link, rather
-    /// than a capsule button — the design spec draws this one differently from `notDetermined`'s "Grant
-    /// Access" because there is nothing this app can do to fix it itself; the user has to leave to do that.
-    private var reminderDeniedPrompt: some View {
-        VStack(spacing: 6) {
-            Text("Reminders access is off")
-                .font(.system(size: 12))
-                .foregroundStyle(palette.textSecondary)
-            Button(action: openReminderPrivacySettings) {
-                Text("Open Settings…")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSettingsLinkHovering ? palette.textSecondary : palette.textTertiary)
-                    .underline(isSettingsLinkHovering)
-            }
-            .buttonStyle(.plain)
-            .onHover { isSettingsLinkHovering = $0 }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// Opens System Settings' Reminders privacy pane, backing the `denied` state's "Open Settings…" link.
-    private func openReminderPrivacySettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders")
-        else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    /// The authorized-and-empty state: everything is done.
-    private var reminderEmptyState: some View {
-        VStack(spacing: 4) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 18))
-                .foregroundStyle(palette.done.opacity(0.8))
-            Text("All clear")
-                .font(.system(size: 12))
-                .foregroundStyle(palette.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// One reminder row: a completion circle, the title (struck through mid-complete), and a due-date chip
-    /// (future: `textTertiary`; overdue: `blocked` red).
-    ///
-    /// - Parameter item: The reminder to draw.
-    private func reminderRow(_ item: RemindersService.ReminderItem) -> some View {
-        let isCompleting = completingReminderIDs.contains(item.id)
-        return HStack(spacing: 10) {
-            Button(action: { completeReminder(item) }) {
-                ZStack {
-                    Circle()
-                        .strokeBorder(Color.white.opacity(0.25), lineWidth: 1.5)
-                        .opacity(isCompleting ? 0 : 1)
-                    Circle()
-                        .fill(palette.done)
-                        .opacity(isCompleting ? 1 : 0)
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(Color.white)
-                        .opacity(isCompleting ? 1 : 0)
-                }
-                .frame(width: 14, height: 14)
-                // The visual circle stays 14x14, but the tappable region is padded out to 22x22: a
-                // too-small hit target was one of the candidate causes for "ticking doesn't always
-                // complete it", and `.contentShape` extends what counts as "inside the button" without
-                // changing how it looks.
-                .padding(4)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isCompleting)
-            // The circle/checkmark ZStack has no text of its own; without this VoiceOver would announce
-            // it as an unlabelled button.
-            .accessibilityLabel("Complete")
-            .accessibilityHint("Marks \"\(item.title)\" as done.")
-
-            Group {
-                Text(item.title)
-                    .font(.system(size: 12))
-                    .foregroundStyle(palette.textPrimary)
-                    .strikethrough(isCompleting, color: palette.textPrimary.opacity(0.5))
-                    .opacity(isCompleting ? 0.5 : 1)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 4)
-
-                if let dueDate = item.dueDate {
-                    Text(Self.dueChipText(dueDate, now: now))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(dueDate < now ? palette.blocked : palette.textTertiary)
-                }
-            }
-            // One stop for "title, due" rather than two separately-focused texts (the completion button,
-            // just above, stays its own separate stop with its own action).
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-                item.dueDate.map { "\(item.title), due \(Self.dueChipText($0, now: now))" } ?? item.title
-            )
-        }
-        .frame(height: 26)
-    }
-
-    /// Fills the circle green with a check and strikes the title through immediately (the design spec's
-    /// "click circle → fills done + white check + title strikethrough 50%" step), then waits 400ms before
-    /// actually calling `RemindersService.complete(_:)` — which is what removes the row, letting
-    /// ``remindersBody``'s own `.animation(value:)` fade+reflow the list once, per the spec's "then 400ms
-    /// delay, row fades 180ms, reflow (finite once)" choreography.
-    ///
-    /// - Parameter item: The reminder being completed.
-    private func completeReminder(_ item: RemindersService.ReminderItem) {
-        guard !completingReminderIDs.contains(item.id) else { return }
-        completingReminderIDs.insert(item.id)
-        Task {
-            try? await Task.sleep(for: .milliseconds(400))
-            remindersService.complete(item)
-            completingReminderIDs.remove(item.id)
-        }
-    }
-
-    /// A due-date chip's text: `2pm` today, `Mon` within the next week, `Sep 4` otherwise — matching the
-    /// design spec's own three examples.
-    ///
-    /// - Parameters:
-    ///   - date: The reminder's due date.
-    ///   - now: The instant to measure "today"/"this week" against.
-    private static func dueChipText(_ date: Date, now: Date) -> String {
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
-            return Self.formatters.dueHour.string(from: date)
-        }
-        let days = calendar.dateComponents(
-            [.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)
-        ).day ?? 0
-        if days > 0, days < 7 {
-            return Self.formatters.dueWeekday.string(from: date)
-        }
-        return Self.formatters.dueDate.string(from: date)
+        .opacity(heroReveal)
     }
 
     /// The permanent last row: `＋ Add reminder` until clicked, then an inline borderless field with its own
@@ -1508,9 +1352,10 @@ struct NotchContentView: View {
         isReminderFieldFocused = true
     }
 
-    /// Commits the draft via `RemindersService.addReminder(title:)` and swaps back to the button.
+    /// Commits the draft (typed times become the due date) and swaps back to the button.
     private func commitNewReminder() {
-        remindersService.addReminder(title: newReminderTitle)
+        let draft = ReminderDraft.parse(newReminderTitle, now: Date())
+        remindersService.addReminder(title: draft.title, due: draft.due, hasTime: draft.hasTime)
         newReminderTitle = ""
         isAddingReminder = false
     }

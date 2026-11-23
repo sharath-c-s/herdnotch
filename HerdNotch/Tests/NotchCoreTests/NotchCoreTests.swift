@@ -479,6 +479,62 @@ import Testing
         #expect(closedCommands == [command(.scheduleExitGrace(generation: graceGeneration), on: displayA)])
     }
 
+    // MARK: - textEntry lock
+
+    private func openedReducer() -> NotchInteractionReducer {
+        var reducer = NotchInteractionReducer()
+        reducer.reduce(.hoverIntent(displayA))
+        fireHoverDebounce(displayA, in: &reducer)
+        let generation = reducer.panels[displayA]?.animationGeneration ?? 0
+        reducer.reduce(.animationSettled(displayA, generation: generation))
+        return reducer
+    }
+
+    @Test func hoverExitDoesNotCollapseWhileTextEntryHeld() {
+        var reducer = openedReducer()
+        #expect(reducer.reduce(.textEntryBegan(displayA)) == [])
+        #expect(reducer.panels[displayA]?.locks == .textEntry)
+        #expect(reducer.reduce(.hoverExit(displayA, pointerInside: false)) == [])
+        #expect(reducer.panels[displayA]?.exitGracePending == false)
+    }
+
+    @Test func textEntryEndedOutsideStartsExitGrace() {
+        var reducer = openedReducer()
+        reducer.reduce(.textEntryBegan(displayA))
+        let commands = reducer.reduce(.textEntryEnded(displayA, pointerInside: false))
+        #expect(reducer.panels[displayA]?.locks.isEmpty == true)
+        let generation = reducer.panels[displayA]?.exitGraceGeneration ?? 0
+        #expect(commands == [command(.scheduleExitGrace(generation: generation), on: displayA)])
+    }
+
+    @Test func textEntryEndedInsideSchedulesNothing() {
+        var reducer = openedReducer()
+        reducer.reduce(.textEntryBegan(displayA))
+        #expect(reducer.reduce(.textEntryEnded(displayA, pointerInside: true)) == [])
+        #expect(reducer.panels[displayA]?.locks.isEmpty == true)
+    }
+
+    /// The reducer blocks escape under any lock, so the app releases textEntry first; this pins both halves.
+    @Test func escapeIsBlockedWhileTextEntryHeldAndCollapsesAfterRelease() {
+        var reducer = openedReducer()
+        reducer.reduce(.textEntryBegan(displayA))
+        #expect(reducer.reduce(.escape(displayA)) == [])
+        #expect(reducer.panels[displayA]?.presentation == .expanded(.home))
+        reducer.reduce(.textEntryEnded(displayA, pointerInside: true))
+        let commands = reducer.reduce(.escape(displayA))
+        #expect(reducer.panels[displayA]?.presentation == .collapsing)
+        #expect(!commands.isEmpty)
+    }
+
+    @Test func escapeStaysBlockedWhileDragAndTextEntryHeld() {
+        var reducer = openedReducer()
+        reducer.reduce(.dragBegan(displayA))
+        reducer.reduce(.textEntryBegan(displayA))
+        #expect(reducer.reduce(.escape(displayA)) == [])
+        #expect(reducer.panels[displayA]?.presentation == .expanded(.home))
+        #expect(reducer.panels[displayA]?.locks.contains(.textEntry) == true)
+    }
+
     // MARK: - Exit grace firing while locked
 
     /// BUG fix (grace-fires-while-locked stuck-open): an exit grace that fires while a lock is held must not

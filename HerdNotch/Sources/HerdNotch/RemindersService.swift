@@ -259,14 +259,23 @@ final class RemindersService: ObservableObject {
 
     /// Creates a reminder titled `title` in the default reminders list and refreshes ``items``.
     ///
-    /// - Parameter title: The reminder's title. Whitespace-only input is dropped silently — the Enter-to-add
-    ///   text field is expected to call this on every submit, including an accidental empty one.
-    func addReminder(title: String) {
+    /// - Parameters:
+    ///   - title: The reminder's title. Whitespace-only input is dropped silently — the Enter-to-add
+    ///     text field is expected to call this on every submit, including an accidental empty one.
+    ///   - due: Optional due date and time; also sets an alarm so the reminder fires at that time.
+    ///   - hasTime: False saves a date-only reminder (no time, no alarm).
+    func addReminder(title: String, due: Date? = nil, hasTime: Bool = true) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, authorizationState == .authorized else { return }
         let reminder = EKReminder(eventStore: store)
         reminder.title = trimmed
         reminder.calendar = store.defaultCalendarForNewReminders()
+        if let due {
+            let fields: Set<Calendar.Component> =
+                hasTime ? [.year, .month, .day, .hour, .minute] : [.year, .month, .day]
+            reminder.dueDateComponents = Calendar.current.dateComponents(fields, from: due)
+            if hasTime { reminder.addAlarm(EKAlarm(absoluteDate: due)) }
+        }
         do {
             try store.save(reminder, commit: true)
             refresh()

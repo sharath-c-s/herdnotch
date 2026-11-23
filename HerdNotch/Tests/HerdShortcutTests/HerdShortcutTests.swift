@@ -15,6 +15,13 @@ import Testing
 
     // MARK: - The shipped default
 
+    @Test func reminderShortcutsLabelTheirCmdTaps() {
+        #expect(HerdShortcut.newReminder.keyCode == UInt32(kVK_F18))
+        #expect(HerdShortcut.remindersList.keyCode == UInt32(kVK_F17))
+        #expect(HerdShortcut.newReminder.summary == "cmd cmd")
+        #expect(HerdShortcut.remindersList.summary == "cmd cmd cmd")
+    }
+
     /// The default has to be bare `F19`, because that is the key the shipped Karabiner rule synthesises from
     /// a double tap of `fn`. If these two ever disagree, pressing `fn` twice does nothing and there is no
     /// error anywhere to explain why.
@@ -158,8 +165,8 @@ import Testing
         #expect(rebound.summary == rebound.displayName)
         #expect(rebound.summary == "⌥⌘H")
         // A different function key must not inherit the annotation either.
-        let otherFunctionKey = HerdShortcut(keyCode: UInt32(kVK_F18), modifiers: 0)
-        #expect(otherFunctionKey.summary == "F18")
+        let otherFunctionKey = HerdShortcut(keyCode: UInt32(kVK_F16), modifiers: 0)
+        #expect(otherFunctionKey.summary == "F16")
     }
 
     // MARK: - Helpers

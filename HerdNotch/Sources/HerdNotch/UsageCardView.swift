@@ -42,11 +42,13 @@ enum UsageFormat {
             ? "$\(Int(value))" : String(format: "$%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
-    static func extraText(_ extra: UsageExtra) -> String {
+    /// Nil when there is nothing worth a row (empty Codex credits).
+    static func extraText(_ extra: UsageExtra) -> String? {
         switch extra {
         case .claudeExtraUsage(let used, let limit):
             return limit.map { "extra \(dollars(used)) / \(dollars($0))" } ?? "extra \(dollars(used))"
         case .codexCredits(let credits, let usd):
+            if credits == 0 && usd == 0 { return nil }
             return "credits \(credits) (\(dollars(usd)))"
         }
     }
@@ -98,8 +100,8 @@ struct UsageCardView: View {
             ForEach(Array(snapshot.windows.enumerated()), id: \.offset) { _, window in
                 row(window)
             }
-            if let extra = snapshot.extra {
-                Text(UsageFormat.extraText(extra)).font(.system(size: 12)).foregroundStyle(palette.textSecondary)
+            if let extra = snapshot.extra, let text = UsageFormat.extraText(extra) {
+                Text(text).font(.system(size: 12)).foregroundStyle(palette.textSecondary)
             }
         }
         .opacity(dimmed ? 0.5 : 1)

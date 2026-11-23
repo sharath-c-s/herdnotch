@@ -17,8 +17,8 @@ public struct SystemLayout: Equatable, Sendable {
     /// Right column, bottom.
     public let keepAwake: CGRect
 
-    public init(panel: CGSize) {
-        let bento = BentoLayout(panel: panel)
+    public init(panel: CGSize, shelfExpanded: Bool = true) {
+        let bento = BentoLayout(panel: panel, shelfExpanded: shelfExpanded)
         band = bento.band
         bandLeftWidget = bento.bandLeftWidget
         bandRightWidget = bento.bandRightWidget

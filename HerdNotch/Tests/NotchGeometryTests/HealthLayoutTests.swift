@@ -4,6 +4,16 @@ import Testing
 @testable import NotchGeometry
 
 @Suite struct HealthLayoutTests {
+
+    @Test func collapsedShelfGrowsTheCardsBy44() {
+        let panel = CGSize(width: 760, height: 432)
+        let open = HealthLayout(panel: panel)
+        let closed = HealthLayout(panel: panel, shelfExpanded: false)
+
+        #expect(closed.shelf.height == 32)
+        #expect(closed.throttling.height == open.throttling.height + 44)
+        #expect(closed.improve.height == open.improve.height + 44)
+    }
     static let panels = [
         CGSize(width: 720, height: 320), CGSize(width: 760, height: 432), CGSize(width: 1000, height: 560),
     ]

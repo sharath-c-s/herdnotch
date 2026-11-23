@@ -15,6 +15,7 @@ public struct BentoLayout: Equatable, Sendable {
     public static let usageColumnWidth: CGFloat = 300
     public static let nowPlayingHeight: CGFloat = 128
     public static let shelfHeight: CGFloat = 76
+    public static let shelfCollapsedHeight: CGFloat = 32
 
     /// The full-width utility band.
     public let band: CGRect
@@ -27,14 +28,15 @@ public struct BentoLayout: Equatable, Sendable {
     /// The full-width strip at the bottom, inside the margins.
     public let shelf: CGRect
 
-    public init(panel: CGSize) {
+    public init(panel: CGSize, shelfExpanded: Bool = true) {
         let inner = panel.width - 2 * Self.margin
         band = CGRect(x: 0, y: 0, width: panel.width, height: Self.bandHeight)
         bandLeftWidget = CGRect(x: Self.margin, y: 4, width: 244, height: 36)
         bandRightWidget = CGRect(x: panel.width - 36 - 224, y: 4, width: 224, height: 36)
 
-        let shelfY = panel.height - Self.margin - Self.shelfHeight
-        shelf = CGRect(x: Self.margin, y: shelfY, width: inner, height: Self.shelfHeight)
+        let shelfH = shelfExpanded ? Self.shelfHeight : Self.shelfCollapsedHeight
+        let shelfY = panel.height - Self.margin - shelfH
+        shelf = CGRect(x: Self.margin, y: shelfY, width: inner, height: shelfH)
 
         let cardsBottom = shelfY - Self.gutter
         let cardsHeight = max(0, cardsBottom - Self.cardsTop)

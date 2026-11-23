@@ -112,6 +112,7 @@ private final class NotchAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var herdHotKey = HerdGlobalHotKey { [weak self] in
         FileHandle.standardError.write(Data("herdnotch: search shortcut fired\n".utf8))
         guard let self, let display = self.windowController.debugTargetDisplay() else { return }
+        self.windowController.clearReminderStateIfClosed(display)
         self.windowController.send(.hotkeyToggle(display))
     }
 
@@ -121,6 +122,16 @@ private final class NotchAppDelegate: NSObject, NSApplicationDelegate {
     /// reason as ``herdHotKey``: its closure captures `self`.
     private lazy var caffeinateHotKey = HerdGlobalHotKey { [weak self] in
         self?.windowController.toggleKeepAwake()
+    }
+
+    /// New-reminder capture (F18, relayed from a Karabiner cmd double tap). `lazy` for the same reason as ``herdHotKey``.
+    private lazy var newReminderHotKey = HerdGlobalHotKey { [weak self] in
+        self?.windowController.openReminders(.compose)
+    }
+
+    /// Reminders list (F17, relayed from a Karabiner cmd triple tap).
+    private lazy var remindersListHotKey = HerdGlobalHotKey { [weak self] in
+        self?.windowController.openReminders(.list)
     }
 
     /// The "Caffeinate" status-item menu item, held so its checkmark can be kept in sync with
@@ -157,6 +168,7 @@ private final class NotchAppDelegate: NSObject, NSApplicationDelegate {
         installDebugStatusItem()
         applySearchShortcut()
         applyCaffeinateShortcut()
+        applyReminderShortcuts()
 
         // Mirrors the retired menu bar app's `AppDelegate`'s one subscription: `objectWillChange` fires before the
         // value is written, so the work hops to the next main-actor turn and reads the new value.
@@ -212,6 +224,19 @@ private final class NotchAppDelegate: NSObject, NSApplicationDelegate {
         FileHandle.standardError.write(
             Data("herdnotch: caffeinate shortcut \(shortcutName) registered: \(registered)\n".utf8)
         )
+    }
+
+    /// Claims ``HerdShortcut/newReminder`` and ``HerdShortcut/remindersList``, once at launch.
+    private func applyReminderShortcuts() {
+        for (hotKey, shortcut, name) in [
+            (newReminderHotKey, HerdShortcut.newReminder, "new reminder"),
+            (remindersListHotKey, HerdShortcut.remindersList, "reminders list"),
+        ] {
+            let registered = hotKey.register(shortcut)
+            FileHandle.standardError.write(
+                Data("herdnotch: \(name) shortcut \(shortcut.displayName) registered: \(registered)\n".utf8)
+            )
+        }
     }
 
     /// Claims the configured shortcut and records whether Carbon accepted it.

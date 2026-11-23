@@ -5,6 +5,17 @@ import Testing
 
 @Suite struct BentoLayoutTests {
 
+    @Test func collapsedShelfIs32TallAndCardsGrowBy44() {
+        let panel = CGSize(width: 760, height: 432)
+        let open = BentoLayout(panel: panel)
+        let closed = BentoLayout(panel: panel, shelfExpanded: false)
+
+        #expect(closed.shelf == CGRect(x: 16, y: 384, width: 728, height: 32))
+        #expect(closed.shelf.maxY == panel.height - BentoLayout.margin)
+        #expect(closed.agents.height == open.agents.height + 44)
+        #expect(closed.usage.height == open.usage.height + 44)
+    }
+
     @Test func defaultSizeFrames() {
         let layout = BentoLayout(panel: CGSize(width: 760, height: 432))
 

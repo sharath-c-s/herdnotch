@@ -22,7 +22,7 @@ Test baselines at 0.1.11: `HerdNotch` 363 (sum of the per-target lines), `HerdKi
 
 ## In flight
 
-Nothing. `main` = `origin/main` at the 0.1.11 commit.
+Branch `feat/cmd-reminders`: left Command double tap opens a compose field for a new reminder (typed times, date-only reminders, Enter saves and closes, Esc cancels), triple tap opens the reminders list, both through a Karabiner rule relaying to F18 and F17. Adds the `textEntry` interaction lock so the compose panel survives pointer movement. Not yet on device: the Karabiner rule timing and the lock pairing. `main` = `origin/main` at the 0.1.11 commit.
 
 ## Open threads
 

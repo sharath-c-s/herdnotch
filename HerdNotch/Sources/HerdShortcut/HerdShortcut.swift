@@ -78,6 +78,12 @@ public struct HerdShortcut: Equatable, Sendable {
         keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(controlKey | shiftKey)
     )
 
+    /// New-reminder capture: bare `F18`. Karabiner relays a left-cmd double tap (see `karabiner/herd-cmd-taps.json`).
+    public static let newReminder = HerdShortcut(keyCode: UInt32(kVK_F18), modifiers: 0)
+
+    /// Reminders list: bare `F17`. Karabiner relays a left-cmd triple tap (see `karabiner/herd-cmd-taps.json`).
+    public static let remindersList = HerdShortcut(keyCode: UInt32(kVK_F17), modifiers: 0)
+
     // MARK: - Validity
 
     /// Whether this combination is safe to claim system-wide.
@@ -125,7 +131,12 @@ public struct HerdShortcut: Equatable, Sendable {
     /// those are the same thing. Once the shortcut is changed to anything else the annotation disappears,
     /// because the rule no longer applies.
     public var summary: String {
-        self == Self.fnDoubleTap ? "fn fn" : displayName
+        switch self {
+        case Self.fnDoubleTap: "fn fn"
+        case Self.newReminder: "cmd cmd"
+        case Self.remindersList: "cmd cmd cmd"
+        default: displayName
+        }
     }
 
     // MARK: - Key names

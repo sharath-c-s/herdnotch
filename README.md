@@ -60,6 +60,14 @@ Press **fn** twice to open search over every agent. Type a few letters (`catver`
 
 The script backs up your Karabiner config first and adds the rule next to your existing ones. If the emoji picker also opens on the tap, set System Settings > Keyboard > "Press the globe key to" > "Do Nothing". You can also pick any other shortcut in Settings.
 
+## Reminders from the keyboard
+
+Press the left **Command** key twice, quickly, to write a new reminder. The notch opens with a focused field. Type the reminder and a time if you want one, for example `call bank 5pm`, `standup tomorrow 9am` or `call bank at 5`. A chip under the field shows how the time was read. A day with no time (`dentist tomorrow`) makes a date-only reminder with no alarm. Press Return to save and close, or Escape to cancel. The notch stays open while you type, even if the pointer is elsewhere.
+
+Press left Command three times, quickly, to open the reminders list on the notch. Pressing the same gesture again closes it.
+
+These gestures use a second Karabiner-Elements rule that relays them to `F18` and `F17`. Re-run `./karabiner/install-fn-rule.sh` to install it. The script warns if an earlier rule already maps the left Command key.
+
 ## Building from source
 
 You need Xcode 26 or later. The tests use Swift Testing and the views use SwiftUI macros, and both need a full Xcode, not only the Command Line Tools.

@@ -12,31 +12,48 @@ struct ShelfStripView: View {
     let onDragEnded: () -> Void
 
     var body: some View {
+        if service.items.isEmpty {
+            emptyStrip
+        } else {
+            filledStrip
+        }
+    }
+
+    /// One line in the 32 pt collapsed card.
+    private var emptyStrip: some View {
+        HStack(spacing: 8) {
+            Text("SHELF")
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(palette.textSecondary)
+            Text("Drop files here")
+                .font(.system(size: 12))
+                .foregroundStyle(palette.textTertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var filledStrip: some View {
         VStack(alignment: .leading, spacing: 4) {
             header
-            if service.items.isEmpty {
-                Text("Drop files here")
-                    .font(.system(size: 12))
-                    .foregroundStyle(palette.textTertiary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(service.items.sorted { $0.addedAt > $1.addedAt }) { item in
-                            ShelfTile(
-                                item: item, fileURL: service.fileURL(for: item), palette: palette,
-                                onOpen: { service.open(item) },
-                                onMissing: { service.prune() },
-                                onRemove: { service.remove(item.id) },
-                                onDragBegan: {
-                                    service.dragBegan(item.id)
-                                    onDragBegan()
-                                },
-                                onDragEnded: {
-                                    service.dragEnded(item.id)
-                                    onDragEnded()
-                                })
-                        }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(service.items.sorted { $0.addedAt > $1.addedAt }) { item in
+                        ShelfTile(
+                            item: item, fileURL: service.fileURL(for: item), palette: palette,
+                            onOpen: { service.open(item) },
+                            onMissing: { service.prune() },
+                            onRemove: { service.remove(item.id) },
+                            onDragBegan: {
+                                service.dragBegan(item.id)
+                                onDragBegan()
+                            },
+                            onDragEnded: {
+                                service.dragEnded(item.id)
+                                onDragEnded()
+                            })
                     }
                 }
             }

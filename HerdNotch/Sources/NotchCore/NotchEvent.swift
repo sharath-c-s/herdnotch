@@ -122,6 +122,15 @@ public enum NotchEvent: Sendable, Equatable {
     ///     close alone.
     case playlistPickerClosed(NotchDisplayID, pointerInside: Bool)
 
+    /// A text field (the reminders compose field) took focus; holds the panel open like the picker does.
+    case textEntryBegan(NotchDisplayID)
+
+    /// The text field released focus, was submitted, or left the screen.
+    ///
+    /// - Parameter pointerInside: Whether the pointer is inside the panel now, as for
+    ///   ``playlistPickerClosed(_:pointerInside:)``; `false` starts the normal exit grace.
+    case textEntryEnded(NotchDisplayID, pointerInside: Bool)
+
     /// Any held ``InteractionLock`` was released by something other than one of the paired begin/end events
     /// above.
     ///
@@ -194,6 +203,8 @@ public enum NotchEvent: Sendable, Equatable {
         case .pressEnded(let display, _): return display
         case .playlistPickerOpened(let display): return display
         case .playlistPickerClosed(let display, _): return display
+        case .textEntryBegan(let display): return display
+        case .textEntryEnded(let display, _): return display
         case .lockReleased(let display, _): return display
         case .escape(let display): return display
         case .route(let display, _): return display

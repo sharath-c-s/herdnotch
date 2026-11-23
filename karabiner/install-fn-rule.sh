@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # Appends every rule in RULE_FILES below to every Karabiner-Elements profile: the fn-double-tap rule
-# (herd-fn-double-tap.json, pane search). It relays a double-tap of fn into a bare F19 that Carbon can
+# (herd-fn-double-tap.json, pane search) and the left-cmd tap rule (herd-cmd-taps.json: double tap to F18 for a new
+# reminder, triple tap to F17 for the reminders list). It relays a double-tap of fn into a bare F19 that Carbon can
 # register; see the JSON file's own comments-by-example for the shape. (The caffeinate toggle no longer
 # needs a rule here — it moved to the ordinary chord Control+Shift+C, which Carbon claims directly.)
 #
@@ -38,6 +39,7 @@ cd "$(dirname "$0")"
 
 RULE_FILES=(
     "$PWD/herd-fn-double-tap.json"
+    "$PWD/herd-cmd-taps.json"
 )
 CONFIG="$HOME/.config/karabiner/karabiner.json"
 KARABINER_CLI="/Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli"
@@ -64,6 +66,16 @@ echo "==> profiles and existing complex modifications, before:"
 jq -r '.profiles[] | "    \(.name): \((.complex_modifications.rules // []) | length) rule(s)"' "$CONFIG"
 jq -r '.profiles[] | .complex_modifications.rules // [] | .[] | "      - \(.description // "(no description)")"' \
     "$CONFIG"
+
+if [ "$MODE" != "remove" ]; then
+    # Karabiner runs rules in order, so an earlier rule that already handles left_command can swallow the tap.
+    CMD_DESC="$(jq -r '.rules[0].description' "$PWD/herd-cmd-taps.json")"
+    jq -r --arg d "$CMD_DESC" '.profiles[] | .name as $p | (.complex_modifications.rules // [])[]
+        | select(.description != $d)
+        | select([.manipulators[]? | .from.key_code?] | any(. == "left_command"))
+        | "warning: profile \($p): rule \"\(.description // "(no description)")\" already maps left_command and may swallow cmd cmd"' \
+        "$CONFIG" >&2
+fi
 
 # Every rule file is applied in turn, each pass reading the previous pass's own output, chaining into one
 # final result before anything is written to disk. Temp files accumulate in STEP_FILES and are all cleaned
@@ -153,7 +165,8 @@ else
 ==> installed. Karabiner reloads within about a second; no restart needed.
 
 Press fn twice, quickly. HerdNotch's pane search should open.
-Press left Control twice, quickly. HerdNotch's caffeinate toggle should fire (see `pmset -g assertions`).
+Press left Command twice, quickly. A new-reminder field should open on the notch.
+Press left Command three times, quickly. The reminders list should open on the notch.
 
 If the emoji picker opens as well, macOS is still acting on the fn tap itself. This rule deliberately
 forwards fn through so that fn+arrow, fn+delete and fn+F1 keep working, and macOS's globe-key action fires

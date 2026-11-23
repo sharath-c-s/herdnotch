@@ -11,8 +11,8 @@ public struct HealthLayout: Equatable, Sendable {
     public let throttling: CGRect
     public let improve: CGRect
 
-    public init(panel: CGSize) {
-        let bento = BentoLayout(panel: panel)
+    public init(panel: CGSize, shelfExpanded: Bool = true) {
+        let bento = BentoLayout(panel: panel, shelfExpanded: shelfExpanded)
         band = bento.band
         bandLeftWidget = bento.bandLeftWidget
         bandRightWidget = bento.bandRightWidget

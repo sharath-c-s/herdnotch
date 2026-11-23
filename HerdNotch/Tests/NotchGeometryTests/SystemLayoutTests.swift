@@ -4,6 +4,16 @@ import Testing
 @testable import NotchGeometry
 
 @Suite struct SystemLayoutTests {
+
+    @Test func collapsedShelfGrowsTheCardColumns() {
+        let panel = CGSize(width: 760, height: 432)
+        let open = SystemLayout(panel: panel)
+        let closed = SystemLayout(panel: panel, shelfExpanded: false)
+
+        #expect(closed.shelf.height == 32)
+        #expect(closed.reminders.maxY - open.reminders.maxY == 44)
+        #expect(closed.keepAwake.maxY - open.keepAwake.maxY == 44)
+    }
     static let panels = [
         CGSize(width: 720, height: 320), CGSize(width: 760, height: 432), CGSize(width: 1000, height: 560),
     ]

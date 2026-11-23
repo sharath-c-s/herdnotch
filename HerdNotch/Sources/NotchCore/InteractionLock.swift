@@ -50,4 +50,11 @@ public struct InteractionLock: OptionSet, Sendable {
     /// frame entirely (a search field's suggestion list may render past the panel's edge), and none of the
     /// pointer-driven locks would otherwise cover that.
     public static let playlistPicker = InteractionLock(rawValue: 1 << 3)
+
+    /// A text field the user is typing into (the reminders compose field) holds the panel open.
+    ///
+    /// Acquired by `NotchEvent/textEntryBegan(_:)`, released by `NotchEvent/textEntryEnded(_:pointerInside:)`.
+    /// Needed because a hotkey-opened panel can open with the pointer elsewhere, and the first mouse move
+    /// would otherwise start the exit grace and lose the draft.
+    public static let textEntry = InteractionLock(rawValue: 1 << 4)
 }

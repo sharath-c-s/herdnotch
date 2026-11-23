@@ -78,6 +78,19 @@ final class NotchDisplayViewModel: ObservableObject {
     /// it changed matters (its own value carries no meaning) — that is what lets the view react with a
     /// plain "enter search mode and focus the field" rather than branching on a value.
     @Published var searchActivationToken: Int = 0
+
+    /// Non-nil while the full-panel reminders view replaces the page content. Cleared on collapse.
+    @Published var reminderMode: ReminderMode? = nil
+
+    /// True only when the view was opened from the System card header, so Esc goes back to that page.
+    @Published var reminderReturnsToPage: Bool = false
+
+    /// Bumped when a hotkey open should focus the compose field; `RemindersPanelView` reacts to the change.
+    @Published var reminderFocusToken: Int = 0
+
+    /// Bumped when the controller released the text-entry hold because focus was lost (click outside,
+    /// panel resigned key); `RemindersPanelView` drops its field focus.
+    @Published var reminderBlurToken: Int = 0
 }
 
 /// The AppKit composition root's central controller: owns one `NotchPanel` per display, the single
@@ -302,8 +315,60 @@ final class NotchWindowController: NSObject {
     private var pageObservers: [NotchDisplayID: AnyCancellable] = [:]
 
     /// The dumb, faithful executor this controller hands every returned `NotchCommand` to.
-    private lazy var executor = NotchCommandExecutor { [weak self] event in
-        self?.send(event)
+    private lazy var executor: NotchCommandExecutor = {
+        let executor = NotchCommandExecutor { [weak self] event in self?.send(event) }
+        executor.onClickOutside = { [weak self] display in self?.releaseTextEntryAndBlur(display) }
+        return executor
+    }()
+
+    /// Displays holding the reducer's `textEntry` lock. This controller is the only place that sends
+    /// begin/end, so they stay paired; cleared (without an event) when the reducer drops locks on collapse.
+    private var textEntryDisplays: Set<NotchDisplayID> = []
+
+    /// Per-display `didResignKey` observers on the panel; removed with the display.
+    private var resignKeyObservers: [NotchDisplayID: NSObjectProtocol] = [:]
+
+    /// Acquires or releases `textEntry` for `display`; both directions are idempotent.
+    func setTextEntry(_ active: Bool, display: NotchDisplayID) {
+        if active {
+            // Policy: held while a keyboard-summoned reminders view is open. Released on Esc, hotkey toggle,
+            // Enter-save, click outside, resign key and collapse; never on a compose/list switch.
+            guard remindersService.authorizationState == .authorized else { return }
+            switch presentation(for: display) {
+            case .expanding, .expanded: break
+            default: return
+            }
+            guard textEntryDisplays.insert(display).inserted else { return }
+            send(.textEntryBegan(display))
+        } else {
+            guard textEntryDisplays.remove(display) != nil else { return }
+            send(.textEntryEnded(display, pointerInside: executor.pointerInside(display: display)))
+        }
+    }
+
+    /// Releases the hold after focus was lost and, only if it was held, tells the view to drop its field focus.
+    private func releaseTextEntryAndBlur(_ display: NotchDisplayID) {
+        guard textEntryDisplays.contains(display) else { return }
+        setTextEntry(false, display: display)
+        displayPanels[display]?.viewModel.reminderBlurToken += 1
+    }
+
+    private func observeResignKey(display: NotchDisplayID, panel: NotchPanel) {
+        resignKeyObservers[display] = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.releaseTextEntryAndBlur(display) }
+        }
+    }
+
+    /// Drops a stale reminders view before a hotkey open: a collapsing panel is retargeted to expanding.
+    func clearReminderStateIfClosed(_ display: NotchDisplayID) {
+        switch presentation(for: display) {
+        case .collapsed, .collapsing, nil:
+            displayPanels[display]?.viewModel.reminderMode = nil
+            displayPanels[display]?.viewModel.reminderReturnsToPage = false
+        default: break
+        }
     }
 
     /// The in-flight (or most recently scheduled) reconcile work item, replaced rather than stacked on
@@ -495,6 +560,18 @@ final class NotchWindowController: NSObject {
         // the last point this method can read it at all. See the key-window contract below for why the
         // trigger, not just "did an expand settle", is what this method needs.
         let previousPresentation = reducer.panels[event.display]?.presentation
+        // The reducer ignores escape and the hotkey toggle while any lock is held. Release the compose hold
+        // first, but only when it is the sole lock and the panel is expanded: a blocked escape must not
+        // strand the draft without its hold.
+        switch event {
+        case .escape(let display), .hotkeyToggle(let display):
+            if case .expanded = reducer.panels[display]?.presentation,
+                reducer.panels[display]?.locks.subtracting(.textEntry).isEmpty == true
+            {
+                setTextEntry(false, display: display)
+            }
+        default: break
+        }
         let commands = reducer.reduce(event)
         updateViewModel(for: event.display)
         for command in commands {
@@ -528,7 +605,12 @@ final class NotchWindowController: NSObject {
                 // `searchActivationToken`, which is what tells the agents hero card to enter search mode
                 // and focus its field — see that property's own documentation.
                 displayPanels[event.display]?.panel.makeKey()
-                displayPanels[event.display]?.viewModel.searchActivationToken += 1
+                // The reminders view has its own field; fn fn search must not fire under it.
+                if let mode = displayPanels[event.display]?.viewModel.reminderMode {
+                    if mode == .compose { displayPanels[event.display]?.viewModel.reminderFocusToken += 1 }
+                } else {
+                    displayPanels[event.display]?.viewModel.searchActivationToken += 1
+                }
             case .expanding(.hover), .expanding(.fileDrag), .collapsed, .collapsing, .expanded(_), .suspended, nil:
                 break
             }
@@ -548,6 +630,38 @@ final class NotchWindowController: NSObject {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         return screen.flatMap(NotchScreenAdapter.displayID(for:))
+    }
+
+    /// Opens (or toggles closed, like fn fn) the full-panel reminders view on the display under the pointer.
+    ///
+    /// Reuses `hotkeyToggle` so the key-window path is the fn fn one; `reminderMode` is set first so the
+    /// expanded body mounts already showing it, and cleared again if a lock or suspend refused the open.
+    func openReminders(_ mode: ReminderMode) {
+        guard let display = debugTargetDisplay(), let displayPanel = displayPanels[display] else { return }
+        let viewModel = displayPanel.viewModel
+        switch ReminderOpen.action(
+            presentation: presentation(for: display), current: viewModel.reminderMode, requested: mode)
+        {
+        case .close:
+            send(.escape(display))
+        case .switchMode:
+            viewModel.reminderReturnsToPage = false
+            viewModel.reminderMode = mode
+            displayPanel.panel.makeKey()
+            if mode == .compose { viewModel.reminderFocusToken += 1 }
+            setTextEntry(true, display: display)
+        case .open:
+            // Set after any stale-state clearing so a retargeted collapse still opens on this mode.
+            viewModel.reminderReturnsToPage = false
+            viewModel.reminderMode = mode
+            send(.hotkeyToggle(display))
+            switch presentation(for: display) {
+            case .expanding, .expanded: setTextEntry(true, display: display)
+            default: viewModel.reminderMode = nil
+            }
+        case .ignore:
+            break
+        }
     }
 
     /// `display`'s current presentation, read straight from the reducer.
@@ -590,6 +704,19 @@ final class NotchWindowController: NSObject {
         }
         if viewModel.pendingRoute != pendingRoute {
             viewModel.pendingRoute = pendingRoute
+        }
+        switch presentation {
+        case .collapsing:
+            // Keep the reminders view drawn through the close animation (no flash of the page view);
+            // a fn fn retarget clears it first in clearReminderStateIfClosed.
+            textEntryDisplays.remove(display)
+        case .collapsed:
+            textEntryDisplays.remove(display)
+            if viewModel.reminderMode != nil { viewModel.reminderMode = nil }
+            if viewModel.reminderReturnsToPage { viewModel.reminderReturnsToPage = false }
+        case .suspended:
+            textEntryDisplays.remove(display)
+        case .expanding, .expanded: break
         }
         updateContainerVisibility(display: display)
         refreshWings(for: display)
@@ -1103,7 +1230,9 @@ final class NotchWindowController: NSObject {
             if let existing = displayPanels[display] {
                 updateGeometry(display: display, existing: existing, layout: layout)
             } else {
-                displayPanels[display] = makePanel(for: display, layout: layout)
+                let created = makePanel(for: display, layout: layout)
+                displayPanels[display] = created
+                observeResignKey(display: display, panel: created.panel)
             }
             // Recomputed here, after `displayPanels[display]` is guaranteed to exist for both branches
             // above: `makePanel(for:layout:)`'s own call to `updateViewModel(for:)` runs before its caller
@@ -1127,6 +1256,9 @@ final class NotchWindowController: NSObject {
 
         for display in displayPanels.keys where !liveDisplays.contains(display) {
             send(.suspend(display))
+            if let observer = resignKeyObservers.removeValue(forKey: display) {
+                NotificationCenter.default.removeObserver(observer)
+            }
             executor.teardownDisplay(display)
             displayPanels[display]?.panel.orderOut(nil)
             displayPanels.removeValue(forKey: display)
@@ -1171,6 +1303,7 @@ final class NotchWindowController: NSObject {
                 onOpenSettings: { [weak self] in self?.onOpenSettings?() },
                 onDragBegan: { [weak self] in self?.send(.dragBegan(display)) },
                 onDragEnded: { [weak self] in self?.sendDragEnded(display) },
+                onTextEntry: { [weak self] active in self?.setTextEntry(active, display: display) },
                 onSelectAgent: { [weak self] session, agent in
                     self?.onSelectAgent?(session, agent)
                     self?.send(.escape(display))

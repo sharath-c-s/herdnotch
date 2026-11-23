@@ -1,0 +1,150 @@
+{
+    "title": "herd cmd taps",
+    "rules": [
+        {
+            "description": "herd: cmd cmd -> F18 (new reminder), cmd cmd cmd -> F17 (reminders)",
+            "manipulators": [
+                {
+                    "type": "basic",
+                    "conditions": [
+                        {
+                            "type": "variable_if",
+                            "name": "herd_cmd_taps",
+                            "value": 2
+                        }
+                    ],
+                    "from": {
+                        "key_code": "left_command",
+                        "modifiers": {
+                            "optional": [
+                                "any"
+                            ]
+                        }
+                    },
+                    "to": [
+                        {
+                            "key_code": "left_command"
+                        }
+                    ],
+                    "to_if_alone": [
+                        {
+                            "set_variable": {
+                                "name": "herd_cmd_taps",
+                                "value": 0
+                            }
+                        },
+                        {
+                            "key_code": "f17"
+                        }
+                    ],
+                    "parameters": {
+                        "basic.to_if_alone_timeout_milliseconds": 250,
+                        "basic.to_delayed_action_delay_milliseconds": 350
+                    }
+                },
+                {
+                    "type": "basic",
+                    "conditions": [
+                        {
+                            "type": "variable_if",
+                            "name": "herd_cmd_taps",
+                            "value": 1
+                        }
+                    ],
+                    "from": {
+                        "key_code": "left_command",
+                        "modifiers": {
+                            "optional": [
+                                "any"
+                            ]
+                        }
+                    },
+                    "to": [
+                        {
+                            "key_code": "left_command"
+                        }
+                    ],
+                    "parameters": {
+                        "basic.to_delayed_action_delay_milliseconds": 350,
+                        "basic.to_if_alone_timeout_milliseconds": 250
+                    },
+                    "to_if_alone": [
+                        {
+                            "set_variable": {
+                                "name": "herd_cmd_taps",
+                                "value": 2
+                            }
+                        }
+                    ],
+                    "to_delayed_action": {
+                        "to_if_invoked": [
+                            {
+                                "set_variable": {
+                                    "name": "herd_cmd_taps",
+                                    "value": 0
+                                }
+                            },
+                            {
+                                "key_code": "f18"
+                            }
+                        ],
+                        "to_if_canceled": [
+                            {
+                                "set_variable": {
+                                    "name": "herd_cmd_taps",
+                                    "value": 0
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "type": "basic",
+                    "from": {
+                        "key_code": "left_command",
+                        "modifiers": {
+                            "optional": [
+                                "any"
+                            ]
+                        }
+                    },
+                    "to": [
+                        {
+                            "key_code": "left_command"
+                        }
+                    ],
+                    "parameters": {
+                        "basic.to_delayed_action_delay_milliseconds": 350,
+                        "basic.to_if_alone_timeout_milliseconds": 250
+                    },
+                    "to_if_alone": [
+                        {
+                            "set_variable": {
+                                "name": "herd_cmd_taps",
+                                "value": 1
+                            }
+                        }
+                    ],
+                    "to_delayed_action": {
+                        "to_if_invoked": [
+                            {
+                                "set_variable": {
+                                    "name": "herd_cmd_taps",
+                                    "value": 0
+                                }
+                            }
+                        ],
+                        "to_if_canceled": [
+                            {
+                                "set_variable": {
+                                    "name": "herd_cmd_taps",
+                                    "value": 0
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}

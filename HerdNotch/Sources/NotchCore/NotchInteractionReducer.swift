@@ -183,6 +183,14 @@ public struct NotchInteractionReducer: Sendable {
             panel.locks.remove(.playlistPicker)
             return handlePointerLeftMaybe(display: display, pointerInside: pointerInside, panel: &panel)
 
+        case .textEntryBegan:
+            insertLockIfActive(.textEntry, panel: &panel)
+            return []
+
+        case .textEntryEnded(_, let pointerInside):
+            panel.locks.remove(.textEntry)
+            return handlePointerLeftMaybe(display: display, pointerInside: pointerInside, panel: &panel)
+
         case .lockReleased(_, let pointerInside):
             // No specific lock is named on this event (see NotchEvent's documentation): every lock now has
             // its own begin/end pair, so this is a defensive full clear for a lock released through some

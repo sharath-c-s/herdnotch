@@ -89,6 +89,9 @@ final class NotchCommandExecutor {
     /// plus the pointer-containment-derived `hoverExit` events the monitors exist to produce.
     private let sendEvent: (NotchEvent) -> Void
 
+    /// A left click landed outside the app's windows while this display's pointer monitors were live.
+    var onClickOutside: ((NotchDisplayID) -> Void)?
+
     /// - Parameter sendEvent: `NotchWindowController.send(_:)`, captured as a closure so this type never
     ///   needs a reference to the controller itself.
     init(sendEvent: @escaping (NotchEvent) -> Void) {
@@ -277,8 +280,10 @@ final class NotchCommandExecutor {
     private func installPointerMonitors(display: NotchDisplayID) {
         guard let state = displays[display], state.globalMonitor == nil, state.localMonitor == nil else { return }
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .otherMouseDragged, .leftMouseDown]
-        let global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+        let global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            let isClick = event.type == .leftMouseDown
             Task { @MainActor in
+                if isClick { self?.onClickOutside?(display) }
                 self?.reportContainment(display: display)
             }
         }
@@ -327,10 +332,15 @@ final class NotchCommandExecutor {
     /// above can share one implementation regardless of which coordinate space each event type natively
     /// reports in.
     private func reportContainment(display: NotchDisplayID) {
-        guard let expandedFrame = displays[display]?.expandedFrameScreen else { return }
-        let hitTestFrame = expandedFrame.insetBy(dx: -Self.hysteresisMargin, dy: -Self.hysteresisMargin)
-        let pointerInside = hitTestFrame.contains(NSEvent.mouseLocation)
-        sendEvent(.hoverExit(display, pointerInside: pointerInside))
+        guard displays[display] != nil else { return }
+        sendEvent(.hoverExit(display, pointerInside: pointerInside(display: display)))
+    }
+
+    /// Whether the pointer is in `display`'s expanded frame widened by the hysteresis margin.
+    func pointerInside(display: NotchDisplayID) -> Bool {
+        guard let expandedFrame = displays[display]?.expandedFrameScreen else { return false }
+        return expandedFrame.insetBy(dx: -Self.hysteresisMargin, dy: -Self.hysteresisMargin)
+            .contains(NSEvent.mouseLocation)
     }
 
     // MARK: - Visibility
