@@ -1,6 +1,6 @@
 # State
 
-Last update: 2026-11-16 (0.1.11). Update this file when a release ships or a thread opens or closes.
+Last update: 2026-11-24 (0.1.12). Update this file when a release ships or a thread opens or closes.
 
 ## Shipped
 
@@ -17,12 +17,13 @@ Last update: 2026-11-16 (0.1.11). Update this file when a release ships or a thr
 | 0.1.9 | 2026-11-04 | Health page (throttling, top processes, swarms by agent, suggestions); plain free-disk read. |
 | 0.1.10 | 2026-11-08 | Claude session title instead of herdr digit tab labels; per-pane status recency. |
 | 0.1.11 | 2026-11-16 | Preview card on row click; approve Claude prompts from the notch through a `PermissionRequest` hook (allow, always, deny, question answers); herdr pane menus through `pane.send_keys` behind a fingerprint and revision guard; Command-click jumps; bundled `install-claude-hook.sh`. |
+| 0.1.12 | 2026-11-24 | Left Command double tap opens a compose field for a new reminder (typed times like "5pm", date-only reminders get no alarm, Enter saves and closes), triple tap opens a full-panel reminders list, both through a Karabiner relay to F18 and F17; `textEntry` lock keeps a keyboard-summoned reminders view open; roomier page tabs under a stacked clock; empty shelf shrinks to a strip; neutral battery ring when healthy. |
 
-Test baselines at 0.1.11: `HerdNotch` 363 (sum of the per-target lines), `HerdKit` 233, `swift build` 0 warnings.
+Test baselines at 0.1.12: `HerdNotch` 389 (sum of the per-target lines), `HerdKit` 233, `swift build` 0 warnings.
 
 ## In flight
 
-Branch `feat/cmd-reminders`: left Command double tap opens a compose field for a new reminder (typed times, date-only reminders, Enter saves and closes, Esc cancels), triple tap opens the reminders list, both through a Karabiner rule relaying to F18 and F17. Adds the `textEntry` interaction lock so the compose panel survives pointer movement. Not yet on device: the Karabiner rule timing and the lock pairing. `main` = `origin/main` at the 0.1.11 commit.
+Nothing. `main` = `origin/main` at the 0.1.12 commit.
 
 ## Open threads
 
